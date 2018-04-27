@@ -15,17 +15,19 @@
 #define MSG_LIMIT 256
 #define MAX_USERS 100
 
+char* pswd = "abcd";
+
 typedef struct target{
   FILE *target_file;
   pthread_mutex_t lock;}
 
 off_t fsize(const char *filename) {
-    struct stat st; 
+    struct stat st;
 
     if (stat(filename, &st) == 0)
         return st.st_size;
 
-    return -1; 
+    return -1;
 }
 
 typedef struct threadarg{
@@ -41,7 +43,7 @@ typedef struct filecontent{
 void* listening_thread_fn(void* p){
   char c;
 thread_arg_t* arg= (thread_arg_t*)p;
-  int client_socket = arg->socket; 
+  int client_socket = arg->socket;
    char buffer[MSG_LIMIT];
    while(true){
      //receive message
@@ -49,9 +51,9 @@ thread_arg_t* arg= (thread_arg_t*)p;
        printf("message: %s \n", strerror(errno));
        exit(1);
      }
-  
+
  pthread
-    
+
 
 
 }
@@ -65,19 +67,19 @@ int main(){
 
   //initialize a  counter for users
   int users=0;
-  
+
   // Open users file with all permitted usernames
   FILE *file;
   file=fopen("permitted_users.txt", "r");
 
   pthread_t listening_threads[MAX_USERS];
-  
-  // Open local file to sen 
+
+  // Open local file to sen
   target_file = fopen("local_copy.txt", "rw");
-  
+
   char* buffer=malloc(sizeof(char)*MSG_LIMIT);
   unsigned short cur;
-  
+
   while( fgets(buffer,MSG_LIMIT,file)!=NULL){
     cur=atoi(buffer);
     list_add(list,cur);
@@ -85,8 +87,8 @@ int main(){
 
   fclose(file);
 
-  
-  
+
+
   // Set up a socket
   int s = socket(AF_INET, SOCK_STREAM, 0);
   if(s == -1) {
@@ -112,13 +114,13 @@ int main(){
    perror("listen failed");
     exit(2);
     }
-  
+
   // Get the listening socket info so we can find out which port we're using
   socklen_t addr_size = sizeof(struct sockaddr_in);
   getsockname(s, (struct sockaddr *) &addr, &addr_size);
 
   int listening_addr= ntohs(addr.sin_port);
-  
+
   // Print the port information
   printf("Listening on port %d\n", ntohs(addr.sin_port));
 
@@ -126,7 +128,7 @@ int main(){
   //being accepting connections from client
  int client_socket;
   socklen_t client_addr_len = sizeof(struct sockaddr_in);
-  
+
   //waiting to accept connection from any new identity:
   while(true){
     if(client<MAX_USERS){
@@ -137,6 +139,14 @@ int main(){
       }
       //up till here connection is established
 
+      char* password[MSG_LIMIT];
+
+      // Read password from client
+      if(read(client_socket, password, MSG_LIMIT)==-1){
+        printf("message: %s \n", strerror(errno));
+        exit(1);
+      }
+
       //read initial information from client
       if(read(client_socket, &buffer, MSG_LIMIT-1)==-1){
         printf("message: %s \n", strerror(errno));
@@ -145,7 +155,7 @@ int main(){
 
       cur=atoi(buffer);
 
-      if(!has_username(list,cur)){
+      if(!strcmp(password, pswd)){
         if(write(client_socket, "You do not have access to this file \n", MSG_LIMIT-1)==-1){
           printf("message: %s \n", strerror(errno));
           exit(1);
@@ -165,6 +175,13 @@ int main(){
         length = ftell (temp);
         fseek (f, 0, SEEK_SET);
         fread (dest->content, 1, length, f);
+        //SEND SIZE OF FILE
+        if(send(client_socket, itoa(dest),size,0) == -1){
+          printf("message: %s\n", strerror(errno));
+          exit(2);
+        }
+
+        //SEND FILE
         if(send(client_socket, dest,size,0) == -1){
           printf("message: %s\n", strerror(errno));
           exit(2);
