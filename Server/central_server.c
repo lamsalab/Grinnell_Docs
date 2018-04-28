@@ -11,89 +11,96 @@
 #include <errno.h>
 #include <time.h>
 #include <sys/stat.h>
+
 #define MSG_LIMIT 256
-#define MAX_USERS 100
+#define PASSWD_LIMIT 32
+
 FILE* target_file;
 char* pswd = "abcd";
 
 pthread_mutex_t lock;
 
-
 typedef struct threadarg{
   int socket;
+} threadarg_t;
 
-}threadarg_t;
+//Holds the client sockets to send all the updates
+typedef struct node {
+  int client_socket;
+  struct node* next;
+} client_sockets_t;
 
+
+client_sockets_t * client_sockets;
+client_sockets_t * lst_end;
 
 void send_file(int client_socket){
-
-  //send file
       
-  char size[MSG_LIMIT];
-        FILE*temp=target_file;
-        fseek (temp, 0, SEEK_END);
-        int length = ftell (temp);
-        fseek (temp, 0, SEEK_SET);
-        char* dest;
-        dest=(char*)malloc(sizeof(char)*length);
-        fread (dest, 1, length, temp);
-        //SEND SIZE OF FILE
-        sprintf(size,"%d",length);
-        if(send(client_socket, size,MSG_LIMIT,0) == -1){
-          printf("message: %s\n", strerror(errno));
-          exit(2);
-        }
+  FILE*temp=target_file;
+  fseek (temp, 0, SEEK_END);
+  
+  int length = ftell (temp);
+  fseek (temp, 0, SEEK_SET);
+  
+  char* dest;
+  dest=(char*)malloc(sizeof(char)*length + 1);
+  fread (dest, 1, length, temp);
+  dest[length + 1] = '\0';
+  
+  //SEND FILE
+  if(send(client_socket, dest,MSG_LIMIT,0) == -1){
+    printf("message: %s\n", strerror(errno));
+    exit(2);
+  }
+  free (dest);
+}
 
-        //SEND FILE
-        if(send(client_socket, dest,MSG_LIMIT,0) == -1){
-          printf("message: %s\n", strerror(errno));
-          exit(2);
-        }
+void iterate_clients () {
+  client_sockets_t * iterator = client_sockets;
+  while (iterator != NULL) {
+    int c_socket = iterator->client_socket;
+    send_file(c_socket);
+    iterator = iterator->next;
+  }
 }
 
 void* listening_thread_fn(void* p){
   char c;
-threadarg_t* arg= (threadarg_t*)p;
+  threadarg_t* arg= (threadarg_t*)p;
   int client_socket = arg->socket;
-   while(true){
-     //receive message
-     if(read(client_socket, &c,1)==-1){
-       printf("message: %s \n", strerror(errno));
-       exit(1);
-     }
+  //send file
+  send_file(client_socket);
+  while(true){
+    //receive message
+    if(read(client_socket, &c,1)== 1){
 
-     pthread_mutex_lock(&lock);
+      pthread_mutex_lock(&lock);
+    
+      if(fputc(c,target_file)==EOF){
+        printf("Failed to write to local file\n");
+        exit(2);
+      }
+    
+      //Need to add at a particular index
+    
+    
+      //Send msg to all the clients
+      iterate_clients();
      
-     if(fputc(c,target_file)==EOF){
-       printf("Failed to write to local file\n");
-       exit(2);
-     }
-     
-     send_file(client_socket);
-     
-     pthread_mutex_unlock(&lock);
+      pthread_mutex_unlock(&lock);
 
-
-
- }
+    }
+  }
 }
 
 
 int main(){
 
   pthread_mutex_init(&lock,NULL);
-
-  //initialize a  counter for users
-  int users=0;
-
-
-  pthread_t listening_threads[MAX_USERS];
+  client_sockets = NULL;
 
   // Open local file to send
   target_file = fopen("local_copy.txt", "rw");
-
-
-
 
   // Set up a socket
   int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -137,43 +144,50 @@ int main(){
 
   //waiting to accept connection from any new identity:
   while(true){
-    if(users<MAX_USERS){
-      client_socket = accept(s, (struct sockaddr*)&addr, &client_addr_len);
-      if(client_socket==-1){
-        perror("Accept Connection failed");
-        exit(2);
-      }
-      //up till here connection is established
+    client_socket = accept(s, (struct sockaddr*)&addr, &client_addr_len);
+    if(client_socket==-1){
+      perror("Accept Connection failed");
+      exit(2);
+    }
+    //Checking if it is connecting to the first client 
+    if (client_sockets == NULL) {
+      client_sockets = malloc (sizeof (client_sockets_t));
+      client_sockets->client_socket = client_socket;
+      lst_end = client_sockets;
+    }
+    else {
+      client_sockets_t next_socket;
+      next_socket.client_socket = client_socket;
+      lst_end->next = &next_socket;
+      lst_end = lst_end->next;
+    }
+    
+    pthread_t thread;
 
-      char password[MSG_LIMIT];
+    //up till here connection is established
 
-      // Read password from client
-      if(read(client_socket, password, MSG_LIMIT)==-1){
+    char password[PASSWD_LIMIT + 1];
+
+    // Read password from client
+    if(read(client_socket, password, PASSWD_LIMIT + 1)==-1){
+      printf("message: %s \n", strerror(errno));
+      exit(1);
+    }
+      
+    if(!(strcmp(password, pswd)==0)){
+      if(write(client_socket, "You do not have access to this file \n", MSG_LIMIT-1)==-1){
         printf("message: %s \n", strerror(errno));
         exit(1);
       }
-
-
-      if(!(strcmp(password, pswd)==0)){
-        if(write(client_socket, "You do not have access to this file \n", MSG_LIMIT-1)==-1){
-          printf("message: %s \n", strerror(errno));
-          exit(1);
-        }
-      }
-      else{
-        //send file
-        send_file(client_socket);
+    }
        
-       
-        threadarg_t args;
-        args.socket=client_socket;
-        //setup listening thread
-        if(pthread_create(&listening_threads[users],NULL,listening_thread_fn,&args)!=0){
-          perror("Failed to create listening thread \n");
-          exit(1);
-        }
-      }
-      users++;
+    threadarg_t args;
+    args.socket=client_socket;
+    //setup listening thread
+    if(pthread_create(&thread,NULL,listening_thread_fn,&args)!=0){
+      perror("Failed to create listening thread \n");
+      exit(1);
     }
   }
 }
+
