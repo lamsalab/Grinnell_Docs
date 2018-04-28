@@ -11,14 +11,13 @@
 #include <errno.h>
 #include <time.h>
 #include <sys/stat.h>
-#include "linked_list.c"
 #define MSG_LIMIT 256
 
-int connect_to_server(int to_socket){
+int connect_to_server(int sin_port,int to_socket){
     struct sockaddr_in addr2 = {
       .sin_addr.s_addr = INADDR_ANY,
       .sin_family = AF_INET,
-      .sin_port = htons(0)
+      .sin_port = sin_port
     };
 
     if(connect(to_socket, (struct sockaddr*) &addr2, sizeof(struct sockaddr_in)) == -1) {
@@ -39,13 +38,19 @@ char* read_file(int socket) {
     printf("message: %s \n", strerror(errno));
     exit(1);
   }
+  if(strcmp(buffer, "You do not have access to this file \n") == 0){
+    printf("You do not have access to this file \n");
+    exit(1);
+  }
+  
   int filesize=atoi(buffer);
+
 
   // Allocate memory for file to be copied into
   char* file = (char*)malloc(sizeof(filesize));
 
   // Read file
-  if(read(socket, file, initial_size) == -1) {
+  if(read(socket, file, filesize) == -1) {
     printf("message: %s \n", strerror(errno));
     exit(1);
   }
@@ -80,6 +85,8 @@ int main(int argc, char** argv) {
     exit(1);
   }
 
+  
+  
    // We should have connected so read initial file and display it
 
    char* file= read_file(directory_socket);
@@ -90,6 +97,7 @@ int main(int argc, char** argv) {
   // Infinitely receive copy of document while sending new version
   int running=1;
 
+  char* buffer=(char*)malloc(sizeof(char)*MSG_LIMIT);
   while(running){
     if(fgets(buffer,MSG_LIMIT,stdin)==NULL){
       perror("Unable to read input");
@@ -100,7 +108,7 @@ int main(int argc, char** argv) {
 
       int length=strlen(buffer);
       for(int i=0;i<length;i++){
-        if(write(directory_socket, buffer[i], 1) == -1) {
+        if(write(directory_socket, buffer+i, 1) == -1) {
           printf("message: %s \n", strerror(errno));
           exit(1);
         }
