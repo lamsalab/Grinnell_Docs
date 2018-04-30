@@ -44,6 +44,7 @@ void send_file(int socket, FILE* file) {
     write(socket, buf, 255);
     bzero(buf, 255);
   }
+  rewind(file);
 }
 
 // listen for updates to the document
@@ -63,6 +64,7 @@ void* thread_fn(void* p) {
     fread(dest, 1, length, file);
     dest[length] = '\0';
     freopen(filename, "w+", file);
+    if(change.loc <= length) {
     fwrite(dest, change.loc, 1, file);
     fflush(file);
      fputc(change.c, file);
@@ -72,6 +74,17 @@ void* thread_fn(void* p) {
      second_part[length-change.loc] = '\0';
      fwrite(second_part, length-change.loc, 1, file);
      fflush(file);
+    } else {
+      fwrite(dest, length, 1, file);
+      fflush(file);
+      fputc(change.c, file);
+      fflush(file);
+    }
+     socket_node_t* cur = users->head;
+     while (cur != NULL) {
+     send_file(cur->socket, file);
+     cur = cur->next;
+     }
   }
     return NULL;
 }

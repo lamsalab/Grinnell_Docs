@@ -27,6 +27,7 @@ void* get_new(void* p) {
   free(arg); // free thread arg struct
   char retd[255];
   while(read(s_for_ds, retd, 255) > 0) {
+    clear();
     addstr(retd);
     refresh();
     bzero(retd, 255);
@@ -128,7 +129,6 @@ int main(int argc, char** argv) {
    default:
      change_arg->c = ch;
      change_arg->loc = y*x_win + x;
-     printw("loc is %d\n", change_arg->loc);
      refresh();
      write(s_for_ds, change_arg, sizeof(change_arg_t));
      move(y, x+1);
