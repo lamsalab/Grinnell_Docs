@@ -55,6 +55,7 @@ int main(int argc, char** argv) {
   noecho();
   // to get special keys
   keypad(stdscr, TRUE);
+  // get COLs and ROWs
   getmaxyx(stdscr, y_win, x_win);
   // connect to directory server
   int s_for_ds = socket(AF_INET, SOCK_STREAM, 0);
@@ -127,6 +128,8 @@ int main(int argc, char** argv) {
    default:
      change_arg->c = ch;
      change_arg->loc = y*x_win + x;
+     printw("loc is %d\n", change_arg->loc);
+     refresh();
      write(s_for_ds, change_arg, sizeof(change_arg_t));
      move(y, x+1);
      x++;

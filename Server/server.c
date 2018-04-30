@@ -20,11 +20,22 @@ typedef struct sockets {
   socket_node_t* head;
 } sockets_t;
 
+typedef struct change_node {
+  char c;
+  int loc;
+  struct change_node* next;
+} change_node_t;
+
+typedef struct changes {
+  change_node_t* head;
+} changes_t;
+
 char password[PASSWORD_LIMIT] = "IloveGrinnell"; // default password
 sockets_t* users; // the list of sockets
 pthread_mutex_t m; // for locking the list
 FILE* file; // the shared doc
 char* filename; // the pathname of the shared doc
+changes_t* changes;
 
 void send_file(int socket, FILE* file) {
   char buf[255];
@@ -43,20 +54,24 @@ void* thread_fn(void* p) {
   free(arg); // free thread arg struct
   send_file(connection_socket, file);
   change_arg_t change;
-  while(read(connection_socket, &change, sizeof(change)) > 0) {
+  while(read(connection_socket, &change, sizeof(change_arg_t)) > 0) {
     rewind(file);
     fseek(file, 0, SEEK_END);
-    int length = ftell (file);
+    int length = ftell(file);
     rewind(file);
     char dest[length + 1];
     fread(dest, 1, length, file);
     dest[length] = '\0';
+    freopen(filename, "w+", file);
     fwrite(dest, change.loc, 1, file);
-    fputc(change.c, file);
-    char second_part[length-change.loc];
-    strcpy(second_part, &dest[change.loc + 1]);
-    second_part[length-change.loc-1] = '\0';
-    fwrite(second_part, strlen(second_part), 1, file);
+    fflush(file);
+     fputc(change.c, file);
+     fflush(file); 
+     char second_part[length-change.loc + 1];
+     strcpy(second_part, &dest[change.loc]);
+     second_part[length-change.loc] = '\0';
+     fwrite(second_part, length-change.loc, 1, file);
+     fflush(file);
   }
     return NULL;
 }
@@ -70,17 +85,20 @@ int main(int argc, char** argv) {
   }
 
   // open specified file
-  file = fopen(argv[1], "r+");
+  file = fopen(argv[1], "r");
   if(file == NULL) {
     fprintf(stderr, "Unable to open file: %s\n", argv[1]);
     fflush(stderr);
     exit(EXIT_FAILURE);
   }
   filename = argv[1];
+
   // initialize a list of users
   users = (sockets_t*)malloc(sizeof(sockets_t));
   users->head = NULL;
-  
+  // initialize history of changes
+  changes = (changes_t*)malloc(sizeof(changes_t));
+  changes->head = NULL;
   pthread_mutex_init(&m, NULL);
   
   // set up a socket for accepting new clients
