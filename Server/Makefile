@@ -1,14 +1,13 @@
-CC=clang
-CFLAGS=-g
+CC = clang
+CFLAGS = -g
 
-all: central_server user
+all: user server
 
 clean:
-	rm -f central_server user
+	rm -f user server
 
-central_server:central_server.c
-	$(CC) $(CFLAGS) -o central_server central_server.c  -lncurses -lpthread
+user: user.c 
+	$(CC) $(CFLAGS) -o user user.c -lncurses -pthread
 
-user: user.c
-	$(CC) $(CFLAGS) -o user user.c -lncurses
-
+server: server.c 
+	$(CC) $(CFLAGS) -o server server.c -lpthread

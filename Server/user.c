@@ -6,117 +6,132 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
+#include <netdb.h>
 #include <pthread.h>
+#include <arpa/inet.h>
 #include <errno.h>
-#include <time.h>
-#include <sys/stat.h>
-#define MSG_LIMIT 256
+#include <limits.h>
+#include <curses.h>
+#include "arg.h"
 
-int connect_to_server(int sin_port,int to_socket){
-    struct sockaddr_in addr2 = {
-      .sin_addr.s_addr = INADDR_ANY,
-      .sin_family = AF_INET,
-      .sin_port = sin_port
-    };
+int x; // cursor's x position
+int y; // cursor's y position
+int x_win; // number of columns
+int y_win; // number of rows
 
-    if(connect(to_socket, (struct sockaddr*) &addr2, sizeof(struct sockaddr_in)) == -1) {
-      //connection fail
-      printf("connection failed \n");
-      return 0;
-    }
-
-    // Connection success
-    return 1;
-}
-
-char* read_file(int socket) {
-  char buffer[MSG_LIMIT];
-
-  // Read filesize over the socket
-  if(read(socket, buffer, MSG_LIMIT) == -1) {
-    printf("message: %s \n", strerror(errno));
-    exit(1);
+// for listening to the server for a newer version of the doc
+void* get_new(void* p) {
+  // unpack thread arg
+  thread_arg_t* arg = (thread_arg_t*)p;
+  int s_for_ds = arg->socket;
+  free(arg); // free thread arg struct
+  char retd[255];
+  while(read(s_for_ds, retd, 255) > 0) {
+    addstr(retd);
+    refresh();
+    bzero(retd, 255);
+    getyx(stdscr, y, x);
   }
-  if(strcmp(buffer, "You do not have access to this file \n") == 0){
-    printf("You do not have access to this file \n");
-    exit(1);
-  }
-  
-  int filesize=atoi(buffer);
-
-
-  // Allocate memory for file to be copied into
-  char* file = (char*)malloc(sizeof(filesize));
-
-  // Read file
-  if(read(socket, file, filesize) == -1) {
-    printf("message: %s \n", strerror(errno));
-    exit(1);
-  }
-
-  return file;
+  return NULL;
 }
 
 int main(int argc, char** argv) {
+  // if not correct number of command line args
   if(argc != 3) {
-    fprintf(stderr, "Usage: %s <server address> <password>\n", argv[0]);
+    fprintf(stderr, "Usage: %s <password> <server address>\n", argv[0]);
+    fflush(stderr);
     exit(EXIT_FAILURE);
   }
+  
+  // store the command line args
+  char* passwd = argv[1];
+  char* server_address = argv[2];
 
-  char* password = argv[2];
-  // Connect to server
-  char* server_address = argv[1];
-
-  int directory_socket = socket(AF_INET, SOCK_STREAM, 0);
-  if(directory_socket == -1){
-    perror("server socket failed");
+  // after connected, initialize screen and send message to join the system
+  initscr();
+  // one char at a time
+  cbreak();
+  // no echo
+  noecho();
+  // to get special keys
+  keypad(stdscr, TRUE);
+  getmaxyx(stdscr, y_win, x_win);
+  // connect to directory server
+  int s_for_ds = socket(AF_INET, SOCK_STREAM, 0);
+  if(s_for_ds == -1) {
+    perror("socket failed");
     exit(2);
   }
-    // Connect to directory server
-  if(connect_to_server(htons(atoi(server_address)), directory_socket) == 0) {
-      perror("connect failed");
-      exit(2);
-    }
-  // Figure out our ip address or port number
-
-  if(write(directory_socket, password, strlen(password)) == -1) {
-    printf("message: %s \n", strerror(errno));
-    exit(1);
+  struct sockaddr_in addr_for_ds = {
+    .sin_family = AF_INET,
+    .sin_port = htons(SERVER_PORT)
+  };
+  // fill in address of directory server
+  struct hostent* hp = gethostbyname(server_address);
+  inet_pton(AF_INET, hp->h_addr, &(addr_for_ds.sin_addr));
+  if(connect(s_for_ds, (struct sockaddr*)&addr_for_ds, sizeof(struct sockaddr_in))) {
+    perror("I failed: connect failed");
+    exit(2);
   }
 
-  
-  
-   // We should have connected so read initial file and display it
+  // after connected, send the password
+  user_arg_t* message = (user_arg_t*)malloc(sizeof(user_arg_t));
+  strcpy(message->buffer, passwd);
+  write(s_for_ds, message, sizeof(user_arg_t));
 
-   char* file= read_file(directory_socket);
-
-   // Display file
-   free(file);
-
-  // Infinitely receive copy of document while sending new version
-  int running=1;
-
-  char* buffer=(char*)malloc(sizeof(char)*MSG_LIMIT);
-  while(running){
-    if(fgets(buffer,MSG_LIMIT,stdin)==NULL){
-      perror("Unable to read input");
-      exit(1);
-    }
-
-    if(strcmp(buffer,"exit")==0){ break;}
-
-      int length=strlen(buffer);
-      for(int i=0;i<length;i++){
-        if(write(directory_socket, buffer+i, 1) == -1) {
-          printf("message: %s \n", strerror(errno));
-          exit(1);
-        }
-
-        char* file = read_file(directory_socket);
-        // Display file again on UI
-
-        free(file);
+  // launch a thread for listening to the server
+  thread_arg_t* arg = (thread_arg_t*)malloc(sizeof(thread_arg_t));
+  arg->socket = s_for_ds;
+  pthread_t thread;
+  if(pthread_create(&thread, NULL, get_new, arg)) {
+    perror("pthread_create failed");
+    exit(EXIT_FAILURE);
   }
- }
+  refresh();
+  int ch;
+  change_arg_t* change_arg = (change_arg_t*)malloc(sizeof(change_arg_t));
+  // move cursor according to user input
+  while(true) {
+    refresh();
+    ch = getch();
+    switch (ch) {
+    case KEY_LEFT:
+      if(x > 0) {
+      move(y, x - 1);
+      x--;
+      }
+      break;
+    case KEY_UP:
+      if(y > 0) {
+      move(y-1, x);
+      y--;
+      }
+      break;
+    case KEY_DOWN:
+      move(y+1, x);
+      y++;
+      break;
+    case KEY_RIGHT:
+      if(x < x_win - 1) {
+      move(y, x+1);
+      x++;
+      }
+      break;
+    case KEY_BACKSPACE:
+      if(x > 0) {
+      move(y, x-1);
+      x--;
+      }
+      break;
+      // if the input is not for moving a cursor, but for inserting a char
+   default:
+     change_arg->c = ch;
+     change_arg->loc = y*x_win + x;
+     write(s_for_ds, change_arg, sizeof(change_arg_t));
+     move(y, x+1);
+     x++;
+     break;
+    }
+  }
+  endwin();
 }
