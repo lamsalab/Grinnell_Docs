@@ -38,11 +38,16 @@ char* filename; // the pathname of the shared doc
 changes_t* changes;
 
 void send_file(int socket, FILE* file) {
-  char buf[255];
   rewind(file);
-  while(fgets(buf, 255, file) != NULL) {
-    write(socket, buf, 255);
-    bzero(buf, 255);
+  fseek(file, 0, SEEK_END);
+  int length = ftell(file);
+  rewind(file);
+  char buf[length + 1];
+  if(fgets(buf, length, file) != NULL) {
+    buf[length] = '\0';
+    printf("buf is %s", buf);
+    write(socket, buf, length + 1);
+    bzero(buf, length + 1);
   }
   rewind(file);
 }
