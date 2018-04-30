@@ -27,7 +27,6 @@ void* get_new(void* p) {
   free(arg); // free thread arg struct
   char retd[255];
   while(read(s_for_ds, retd, 255) > 0) {
-    clear();
     addstr(retd);
     refresh();
     bzero(retd, 255);
