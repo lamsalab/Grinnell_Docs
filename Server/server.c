@@ -43,11 +43,14 @@ void send_file(int socket, FILE* file) {
   int length = ftell(file);
   rewind(file);
   char buf[length + 1];
-  if(fgets(buf, length, file) != NULL) {
+  if(fread(buf, length, 1, file) > 0) {
     buf[length] = '\0';
-    printf("buf is %s", buf);
+    int* size = (int*)malloc(sizeof(int));
+    *size = length + 1;
+    write(socket, size, sizeof(int));
     write(socket, buf, length + 1);
     bzero(buf, length + 1);
+    free(size);
   }
   rewind(file);
 }

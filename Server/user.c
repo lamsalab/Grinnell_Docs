@@ -25,34 +25,17 @@ void* get_new(void* p) {
   thread_arg_t* arg = (thread_arg_t*)p;
   int s_for_ds = arg->socket;
   free(arg); // free thread arg struct
-  int copy = dup(s_for_ds);
-  if(copy == -1) {
-    perror("dup failed");
-    exit(EXIT_FAILURE);
-  }
-  
-  // Open the socket as a FILE stream so we can use fgets
-  FILE* input = fdopen(copy, "r");
-  
-  // Check for errors
-  if(input == NULL) {
-    perror("fdopen failed");
-    exit(EXIT_FAILURE);
-  }
-  
+  int length;
   // Read lines until we hit the end of the input (the client disconnects)
-  char* line = NULL;
-  size_t linecap = 0;
-  while(getline(&line, &linecap, input) > 0) {
+  while(read(s_for_ds, &length, sizeof(int)) > 0) {
+    char buf[length];
+    if(read(s_for_ds, buf, length) > 0) {
     clear();
-    addstr(line);
+    addstr(buf);
     refresh();
-    getyx(stdscr, y, x);
-    free(line);
-    line = NULL;
-    linecap = 0;
-  }
-  
+    //getyx(stdscr, y, x);
+    }
+  }  
   return NULL;
 }
 
