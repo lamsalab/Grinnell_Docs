@@ -1,10 +1,13 @@
 CC = clang
 CFLAGS = -g
 
-all: test_curses
+all: user server
 
 clean:
-	rm -f test_curses
+	rm -f user server
 
-test_curses: test_curses.c
-	$(CC) $(CFLAGS) -o test_curses test_curses.c -lncurses
+user: user.c 
+	$(CC) $(CFLAGS) -o user user.c -lncurses -pthread
+
+server: server.c 
+	$(CC) $(CFLAGS) -o server server.c -lpthread
