@@ -8,7 +8,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <curses.h>
 #include "arg.h"
+
+#define DELETE 16
 
 typedef struct socket_node {
   int socket;
@@ -72,7 +75,7 @@ void* thread_fn(void* p) {
     fread(dest, 1, length, file);
     dest[length] = '\0';
     freopen(filename, "w+", file);
-    if((int)change.c == 263) {
+    if((int)change.c == DELETE) {
       if(change.loc < length) {
         fwrite(dest, change.loc - 1, 1, file);
         fflush(file);
@@ -96,6 +99,7 @@ void* thread_fn(void* p) {
       } else {
         fwrite(dest, length, 1, file);
         fflush(file);
+        fseek(file, change.loc, SEEK_SET);
         fputc(change.c, file);
         fflush(file);
       }

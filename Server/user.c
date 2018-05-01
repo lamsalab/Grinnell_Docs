@@ -19,6 +19,8 @@ int y; // cursor's y position
 int x_win; // number of columns
 int y_win; // number of rows
 
+int total_characters;
+
 // for listening to the server for a newer version of the doc
 void* get_new(void* p) {
   // unpack thread arg
@@ -30,6 +32,7 @@ void* get_new(void* p) {
   while(read(s_for_ds, &length, sizeof(int)) > 0) {
     getyx(stdscr, y, x);
     char buf[length];
+    total_characters = length - 1;
     if(read(s_for_ds, buf, length) > 0) {
     clear();
     addstr(buf);
@@ -115,17 +118,23 @@ int main(int argc, char** argv) {
       }
       break;
     case KEY_DOWN:
-      move(y+1, x);
-      y++;
+      if ((y+1)*x_win + x < total_characters){
+        move(y+1, x);
+        y++;
+      }
       break;
     case KEY_RIGHT:
       if(x < x_win - 1) {
-      move(y, x+1);
-      x++;
+        if (y*x_win + (x+1) < total_characters){
+          move(y, x+1);
+          x++;
+        }
       }
       break;
     case KEY_BACKSPACE:
-      change_arg->c = ch;
+    case KEY_DC:
+    case 127:
+      change_arg->c = (char)10000;
       change_arg->loc = y*x_win + x;
       write(s_for_ds, change_arg, sizeof(change_arg_t));
       if(x > 0) {
@@ -143,6 +152,7 @@ int main(int argc, char** argv) {
    default:
      change_arg->c = ch;
      change_arg->loc = y*x_win + x;
+     
      write(s_for_ds, change_arg, sizeof(change_arg_t));
      move(y, x+1);
      x++;
