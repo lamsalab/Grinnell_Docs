@@ -72,29 +72,41 @@ void* thread_fn(void* p) {
     fread(dest, 1, length, file);
     dest[length] = '\0';
     freopen(filename, "w+", file);
-    if(change.loc <= length) {
-    fwrite(dest, change.loc, 1, file);
-    fflush(file);
-     fputc(change.c, file);
-     fflush(file); 
-     char second_part[length-change.loc + 1];
-     strcpy(second_part, &dest[change.loc]);
-     second_part[length-change.loc] = '\0';
-     fwrite(second_part, length-change.loc, 1, file);
-     fflush(file);
+    if((int)change.c == 263) {
+      if(change.loc < length) {
+        fwrite(dest, change.loc - 1, 1, file);
+        fflush(file);
+        char second_part[length-change.loc + 1];
+        strcpy(second_part, &dest[change.loc]);
+        second_part[length-change.loc] = '\0';
+        fwrite(second_part, length-change.loc, 1, file);
+        fflush(file);
+      }
     } else {
-      fwrite(dest, length, 1, file);
-      fflush(file);
-      fputc(change.c, file);
-      fflush(file);
+      if(change.loc < length) {
+        fwrite(dest, change.loc, 1, file);
+        fflush(file);
+        fputc(change.c, file);
+        fflush(file);
+        char second_part[length-change.loc + 1];
+        strcpy(second_part, &dest[change.loc]);
+        second_part[length-change.loc] = '\0';
+        fwrite(second_part, length-change.loc, 1, file);
+        fflush(file);
+      } else {
+        fwrite(dest, length, 1, file);
+        fflush(file);
+        fputc(change.c, file);
+        fflush(file);
+      }
     }
-     socket_node_t* cur = users->head;
-     while (cur != NULL) {
-     send_file(cur->socket, file);
-     cur = cur->next;
-     }
+    socket_node_t* cur = users->head;
+    while (cur != NULL) {
+      send_file(cur->socket, file);
+      cur = cur->next;
+    }
   }
-    return NULL;
+  return NULL;
 }
 
 int main(int argc, char** argv) {

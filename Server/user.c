@@ -28,12 +28,14 @@ void* get_new(void* p) {
   int length;
   // Read lines until we hit the end of the input (the client disconnects)
   while(read(s_for_ds, &length, sizeof(int)) > 0) {
+    getyx(stdscr, y, x);
     char buf[length];
     if(read(s_for_ds, buf, length) > 0) {
     clear();
     addstr(buf);
     refresh();
-    //getyx(stdscr, y, x);
+    move(y, x);
+    refresh();
     }
   }  
   return NULL;
@@ -123,10 +125,19 @@ int main(int argc, char** argv) {
       }
       break;
     case KEY_BACKSPACE:
+      change_arg->c = ch;
+      change_arg->loc = y*x_win + x;
+      write(s_for_ds, change_arg, sizeof(change_arg_t));
       if(x > 0) {
       move(y, x-1);
       x--;
-      }
+      } else if (x == 0) {
+        if(y > 0) {
+        move(y-1, x_win-1);
+        y--;
+        x = x_win - 1;
+        }
+      }      
       break;
       // if the input is not for moving a cursor, but for inserting a char
    default:
