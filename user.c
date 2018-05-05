@@ -19,6 +19,9 @@ int y; // cursor's y position
 int x_win; // number of columns
 int y_win; // number of rows
 int version;
+int prev_len;
+int len;
+int id;
 
 int total_characters;
 
@@ -28,10 +31,12 @@ void* get_new(void* p) {
   thread_arg_t* arg = (thread_arg_t*)p;
   int s_for_ds = arg->socket;
   free(arg); // free thread arg struct
-  int info[2];
+  int info[5];
   // Read lines until we hit the end of the input (the client disconnects)
-  while(read(s_for_ds, info, sizeof(int) * 2) > 0) {
+  while(read(s_for_ds, info, sizeof(int) * 5) > 0) {
     version = info[0];
+    prev_len = len;
+    len = info[1];
     getyx(stdscr, y, x);
     char buf[info[1]];
     total_characters = info[1] - 1;
@@ -39,7 +44,24 @@ void* get_new(void* p) {
       clear();
       addstr(buf);
       refresh();
-      move(y, x);
+      if(info[4] == 1) {
+        if(info[2] != id && info[3] > y*x_win + x) {
+          move(y, x);
+        } else if (info[2] != id) {
+          move(y+1, x - info[3]%x_win);
+          y++;
+          x -= info[3] % x_win;
+        } else{
+          move(y+1, 0);
+          y++;
+          x = 0;
+        }         
+      } else if(!(info[2] != id && info[3] > y*x_win + x)) {
+        move(y, x + (len - prev_len));
+        x+= len - prev_len;
+      } else {
+        move(y, x);
+      }
       refresh();
     }
   } 
@@ -58,6 +80,8 @@ int main(int argc, char** argv) {
   char* passwd = argv[1];
   char* server_address = argv[2];
 
+  prev_len = 0;
+  len = 0;
   // after connected, initialize screen and send message to join the system
   initscr();
   // one char at a time
@@ -92,7 +116,8 @@ int main(int argc, char** argv) {
   user_arg_t* message = (user_arg_t*)malloc(sizeof(user_arg_t));
   strcpy(message->buffer, passwd);
   write(s_for_ds, message, sizeof(user_arg_t));
-
+  free(message);
+  read(s_for_ds, &id, sizeof(int));
   // launch a thread for listening to the server
   thread_arg_t* arg = (thread_arg_t*)malloc(sizeof(thread_arg_t));
   arg->socket = s_for_ds;
@@ -142,25 +167,12 @@ int main(int argc, char** argv) {
       change_arg->loc = y*x_win + x;
       change_arg->version = version;
       write(s_for_ds, change_arg, sizeof(change_arg_t));
-      if(x > 0) {
-        move(y, x-1);
-        x--;
-      } else if (x == 0) {
-        if(y > 0) {
-          move(y-1, x_win-1);
-          y--;
-          x = x_win - 1;
-        }
-      }
       break;
     case 10:
       change_arg->c = (char)10;
       change_arg->loc = y*x_win + x;
       change_arg->version = version;
       write(s_for_ds, change_arg, sizeof(change_arg_t));
-       move(y+1, 0);
-       y++;
-       x = 0;
        break;
       // if the input is not for moving a cursor, but for inserting a char
     default:
@@ -168,8 +180,6 @@ int main(int argc, char** argv) {
       change_arg->loc = y*x_win + x;
       change_arg->version = version;
       write(s_for_ds, change_arg, sizeof(change_arg_t));
-      move(y, x+1); // to do: check if need a boundary
-      x++;
       break;
     }
   }

@@ -10,13 +10,14 @@
 #include <arpa/inet.h>
 
 #define PASSWORD_LIMIT 20
-#define SERVER_PORT 1038
+#define SERVER_PORT 1042
 
 // this is the struct that a user will send to the server if there's a change to the document
 typedef struct change_arg {
   char c; // the change
   int loc; // the location of the change
   int version;
+  int id;
 } change_arg_t;
 
 // this is the struct that a user will send to the server if the user wants to join
@@ -27,6 +28,7 @@ typedef struct user_arg {
 // this struct represents thread function argument
 typedef struct thread_arg {
   int socket; // the socket through which we can talk to somebody
+  int id;
 } thread_arg_t;
 
 // this struct represents a node in the log of history
