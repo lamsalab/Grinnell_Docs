@@ -138,7 +138,7 @@ int main(int argc, char** argv) {
     case KEY_BACKSPACE:
     case KEY_DC:
     case 127:
-      change_arg->c = (char)10000;
+      change_arg->c = (char)16;
       change_arg->loc = y*x_win + x;
       change_arg->version = version;
       write(s_for_ds, change_arg, sizeof(change_arg_t));
@@ -151,8 +151,17 @@ int main(int argc, char** argv) {
           y--;
           x = x_win - 1;
         }
-      }      
+      }
       break;
+    case 10:
+      change_arg->c = (char)10;
+      change_arg->loc = y*x_win + x;
+      change_arg->version = version;
+      write(s_for_ds, change_arg, sizeof(change_arg_t));
+       move(y+1, 0);
+       y++;
+       x = 0;
+       break;
       // if the input is not for moving a cursor, but for inserting a char
     default:
       change_arg->c = ch;

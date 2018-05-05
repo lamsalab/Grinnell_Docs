@@ -12,6 +12,7 @@
 #include "arg.h"
 
 #define DELETE 16
+#define NEWLINE 10
 
 typedef struct socket_node {
   int socket;
@@ -98,6 +99,18 @@ void* thread_fn(void* p) {
         fwrite(second_part, length-real_loc, 1, file);
         fflush(file);
       }
+    } else if((int)change.c == NEWLINE) {
+        fwrite(dest, real_loc, 1, file);
+        fflush(file);
+        for(int i = 0; i < 238 - (real_loc % 238); i++) {
+          fputc(' ', file);
+          fflush(file);
+        }
+        char second_part[length-real_loc + 1];
+        strcpy(second_part, &dest[real_loc]);
+        second_part[length-real_loc] = '\0';
+        fwrite(second_part, length-real_loc, 1, file);
+        fflush(file);
     } else {
       if(real_loc < length) {
         fwrite(dest, real_loc, 1, file);
