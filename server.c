@@ -63,6 +63,7 @@ void* thread_fn(void* p) {
   
   while(read(connection_socket, &change, sizeof(change_arg_t)) > 0) {
     pthread_mutex_lock(&m);
+    printf("ver is %d, loc is %d\n", change.version, change.loc);
     int real_loc = change.loc;
     log_node_t* curr = head;
     while(curr != NULL) {
