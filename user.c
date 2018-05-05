@@ -18,6 +18,9 @@ int x; // cursor's x position
 int y; // cursor's y position
 int x_win; // number of columns
 int y_win; // number of rows
+int version;
+
+int total_characters;
 
 // for listening to the server for a newer version of the doc
 void* get_new(void* p) {
@@ -25,19 +28,21 @@ void* get_new(void* p) {
   thread_arg_t* arg = (thread_arg_t*)p;
   int s_for_ds = arg->socket;
   free(arg); // free thread arg struct
-  int length;
+  int info[2];
   // Read lines until we hit the end of the input (the client disconnects)
-  while(read(s_for_ds, &length, sizeof(int)) > 0) {
+  while(read(s_for_ds, info, sizeof(int) * 2) > 0) {
+    version = info[0];
     getyx(stdscr, y, x);
-    char buf[length];
-    if(read(s_for_ds, buf, length) > 0) {
-    clear();
-    addstr(buf);
-    refresh();
-    move(y, x);
-    refresh();
+    char buf[info[1]];
+    total_characters = info[1] - 1;
+    if(read(s_for_ds, buf, info[1]) > 0) {
+      clear();
+      addstr(buf);
+      refresh();
+      move(y, x);
+      refresh();
     }
-  }  
+  } 
   return NULL;
 }
 
@@ -73,9 +78,11 @@ int main(int argc, char** argv) {
     .sin_family = AF_INET,
     .sin_port = htons(SERVER_PORT)
   };
+
   // fill in address of directory server
   struct hostent* hp = gethostbyname(server_address);
-  inet_pton(AF_INET, hp->h_addr, &(addr_for_ds.sin_addr));
+  bcopy((char *)hp->h_addr, (char *)&addr_for_ds.sin_addr.s_addr, hp->h_length);
+  
   if(connect(s_for_ds, (struct sockaddr*)&addr_for_ds, sizeof(struct sockaddr_in))) {
     perror("I failed: connect failed");
     exit(2);
@@ -104,24 +111,28 @@ int main(int argc, char** argv) {
     switch (ch) {
     case KEY_LEFT:
       if(x > 0) {
-      move(y, x - 1);
-      x--;
+        move(y, x - 1);
+        x--;
       }
       break;
     case KEY_UP:
       if(y > 0) {
-      move(y-1, x);
-      y--;
+        move(y-1, x);
+        y--;
       }
       break;
     case KEY_DOWN:
-      move(y+1, x);
-      y++;
+      if ((y+1)*x_win + x < total_characters){
+        move(y+1, x);
+        y++;
+      }
       break;
     case KEY_RIGHT:
       if(x < x_win - 1) {
-      move(y, x+1);
-      x++;
+        if (y*x_win + (x+1) < total_characters){
+          move(y, x+1);
+          x++;
+        }
       }
       break;
     case KEY_BACKSPACE:
@@ -129,27 +140,28 @@ int main(int argc, char** argv) {
     case 127:
       change_arg->c = (char)10000;
       change_arg->loc = y*x_win + x;
+      change_arg->version = version;
       write(s_for_ds, change_arg, sizeof(change_arg_t));
       if(x > 0) {
-      move(y, x-1);
-      x--;
+        move(y, x-1);
+        x--;
       } else if (x == 0) {
         if(y > 0) {
-        move(y-1, x_win-1);
-        y--;
-        x = x_win - 1;
+          move(y-1, x_win-1);
+          y--;
+          x = x_win - 1;
         }
       }      
       break;
       // if the input is not for moving a cursor, but for inserting a char
-   default:
-     change_arg->c = ch;
-     change_arg->loc = y*x_win + x;
-     
-     write(s_for_ds, change_arg, sizeof(change_arg_t));
-     move(y, x+1);
-     x++;
-     break;
+    default:
+      change_arg->c = ch;
+      change_arg->loc = y*x_win + x;
+      change_arg->version = version;
+      write(s_for_ds, change_arg, sizeof(change_arg_t));
+      move(y, x+1); // to do: check if need a boundary
+      x++;
+      break;
     }
   }
   endwin();

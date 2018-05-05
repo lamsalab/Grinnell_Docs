@@ -23,22 +23,15 @@ typedef struct sockets {
   socket_node_t* head;
 } sockets_t;
 
-typedef struct change_node {
-  char c;
-  int loc;
-  struct change_node* next;
-} change_node_t;
-
-typedef struct changes {
-  change_node_t* head;
-} changes_t;
-
+int version;
+log_node_t* head;
+log_node_t* tail;
 char password[PASSWORD_LIMIT] = "IloveGrinnell"; // default password
 sockets_t* users; // the list of sockets
-pthread_mutex_t m; // for locking the list
+pthread_mutex_t m; // for locking merging process
 FILE* file; // the shared doc
 char* filename; // the pathname of the shared doc
-changes_t* changes;
+
 
 void send_file(int socket, FILE* file) {
   rewind(file);
@@ -48,16 +41,17 @@ void send_file(int socket, FILE* file) {
   char buf[length + 1];
   if(fread(buf, length, 1, file) > 0) {
     buf[length] = '\0';
-    int* size = (int*)malloc(sizeof(int));
-    *size = length + 1;
-    write(socket, size, sizeof(int));
+    int* ver_len = (int*)malloc(sizeof(int) * 2);
+    ver_len[0] = version;
+    ver_len[1] = length + 1;
+    write(socket, ver_len, sizeof(int)*2);
     write(socket, buf, length + 1);
     bzero(buf, length + 1);
-    free(size);
   }
   rewind(file);
 }
 
+// is it possible to send a blank file?
 // listen for updates to the document
 void* thread_fn(void* p) {
   // unpack thread arg
@@ -66,7 +60,25 @@ void* thread_fn(void* p) {
   free(arg); // free thread arg struct
   send_file(connection_socket, file);
   change_arg_t change;
+  
   while(read(connection_socket, &change, sizeof(change_arg_t)) > 0) {
+    pthread_mutex_lock(&m);
+    int real_loc = change.loc;
+    log_node_t* curr = head;
+    while(curr != NULL) {
+      if(curr->ver < change.version) {
+        curr = curr->next;
+      } else {
+        break;
+      }
+    }
+    while(curr != NULL) {
+      if(curr->loc <= real_loc) {
+        real_loc++;
+      }
+      curr = curr->next;
+    }
+    printf("real_loc is %d\n", real_loc);
     rewind(file);
     fseek(file, 0, SEEK_END);
     int length = ftell(file);
@@ -76,39 +88,53 @@ void* thread_fn(void* p) {
     dest[length] = '\0';
     freopen(filename, "w+", file);
     if((int)change.c == DELETE) {
-      if(change.loc < length) {
-        fwrite(dest, change.loc - 1, 1, file);
+      if(real_loc < length) {
+        fwrite(dest, real_loc - 1, 1, file);
         fflush(file);
-        char second_part[length-change.loc + 1];
-        strcpy(second_part, &dest[change.loc]);
-        second_part[length-change.loc] = '\0';
-        fwrite(second_part, length-change.loc, 1, file);
+        char second_part[length-real_loc + 1];
+        strcpy(second_part, &dest[real_loc]);
+        second_part[length-real_loc] = '\0';
+        fwrite(second_part, length-real_loc, 1, file);
         fflush(file);
       }
     } else {
-      if(change.loc < length) {
-        fwrite(dest, change.loc, 1, file);
+      if(real_loc < length) {
+        fwrite(dest, real_loc, 1, file);
         fflush(file);
         fputc(change.c, file);
         fflush(file);
-        char second_part[length-change.loc + 1];
-        strcpy(second_part, &dest[change.loc]);
-        second_part[length-change.loc] = '\0';
-        fwrite(second_part, length-change.loc, 1, file);
+        char second_part[length-real_loc + 1];
+        strcpy(second_part, &dest[real_loc]);
+        second_part[length-real_loc] = '\0';
+        fwrite(second_part, length-real_loc, 1, file);
         fflush(file);
       } else {
         fwrite(dest, length, 1, file);
         fflush(file);
-        fseek(file, change.loc, SEEK_SET);
+        fseek(file, real_loc, SEEK_SET);
         fputc(change.c, file);
         fflush(file);
       }
+    }
+    // add this change to log history
+    log_node_t* new = (log_node_t*)malloc(sizeof(log_node_t));
+    new->ver = version;
+    version++;
+    new->loc = real_loc;
+    new->next = NULL;
+    if(tail != NULL) {
+      tail->next = new;
+      tail = new;
+    } else {
+      head = new;
+      tail = new;
     }
     socket_node_t* cur = users->head;
     while (cur != NULL) {
       send_file(cur->socket, file);
       cur = cur->next;
     }
+    pthread_mutex_unlock(&m);
   }
   return NULL;
 }
@@ -133,10 +159,13 @@ int main(int argc, char** argv) {
   // initialize a list of users
   users = (sockets_t*)malloc(sizeof(sockets_t));
   users->head = NULL;
-  // initialize history of changes
-  changes = (changes_t*)malloc(sizeof(changes_t));
-  changes->head = NULL;
+  // initialize log history
+  head = NULL;
+  tail = NULL;
+  // initialize lock
   pthread_mutex_init(&m, NULL);
+  // we are initially at Version 0
+  version = 0;
   
   // set up a socket for accepting new clients
   int s = socket(AF_INET, SOCK_STREAM, 0);
@@ -187,10 +216,8 @@ int main(int argc, char** argv) {
       // add the socket to the list of sockets
       socket_node_t* new = (socket_node_t*)malloc(sizeof(socket_node_t));
       new->socket = client_socket;
-      pthread_mutex_lock(&m);
       new->next = users->head;
       users->head = new;
-      pthread_mutex_unlock(&m);
       // launch a thread for listening to this user
       thread_arg_t* arg = (thread_arg_t*)malloc(sizeof(thread_arg_t));
       arg->socket = client_socket;
