@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 
 #define PASSWORD_LIMIT 20
-#define SERVER_PORT 1042
+#define SERVER_PORT 1047
 
 // this is the struct that a user will send to the server if there's a change to the document
 typedef struct change_arg {

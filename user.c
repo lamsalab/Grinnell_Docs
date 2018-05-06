@@ -32,6 +32,7 @@ void* get_new(void* p) {
   int s_for_ds = arg->socket;
   free(arg); // free thread arg struct
   int info[5];
+  int counter = 0;
   // Read lines until we hit the end of the input (the client disconnects)
   while(read(s_for_ds, info, sizeof(int) * 5) > 0) {
     version = info[0];
@@ -51,19 +52,41 @@ void* get_new(void* p) {
           move(y+1, x - info[3]%x_win);
           y++;
           x -= info[3] % x_win;
-        } else{
+        } else {
           move(y+1, 0);
           y++;
           x = 0;
         }         
+      } else if (counter == 0) {
+        move(0, 0);
+        x = 0;
+        y = 0;
+      } else if(info[4] == 2) {
+        if(x == 0 && y != 0) {
+        move(y-1, x_win -1);
+        y--;
+        x = x_win -1;
+        } else if(x == 0 && y == 0) {
+          move(y, x);
+        } else {
+          move(y, x-1);
+          x--;
+        }  
       } else if(!(info[2] != id && info[3] > y*x_win + x)) {
+        if (x == x_win - 1) {
+          move(y + 1, 0);
+          y++;
+          x = 0;
+        } else {
         move(y, x + (len - prev_len));
         x+= len - prev_len;
+        }
       } else {
         move(y, x);
       }
       refresh();
     }
+    counter++;
   } 
   return NULL;
 }
