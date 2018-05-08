@@ -41,7 +41,7 @@ void send_file(int socket, int id, int real_loc, int newline, FILE* file) {
   fseek(file, 0, SEEK_END);
   int length = ftell(file);
   rewind(file);
-  char buf[length + 1];
+  char* buf=(char*) malloc(sizeof(char)*(length+1));
   if(fread(buf, length, 1, file) > 0) {
     buf[length] = '\0';
     int* ver_len = (int*)malloc(sizeof(int) * 5);
@@ -53,8 +53,8 @@ void send_file(int socket, int id, int real_loc, int newline, FILE* file) {
     write(socket, ver_len, sizeof(int)*5);
     free(ver_len);
     write(socket, buf, length + 1);
-    bzero(buf, length + 1);
   }
+  free(buf);
   rewind(file);
 }
 
@@ -70,8 +70,7 @@ void* thread_fn(void* p) {
   int newline = 0;
   send_file(connection_socket, id, 0, newline, file);
   change_arg_t change;
-
-  
+ 
   while(read(connection_socket, &change, sizeof(change_arg_t)) > 0) {
     pthread_mutex_lock(&m);
     newline = 0;
@@ -96,41 +95,31 @@ void* thread_fn(void* p) {
     fseek(file, 0, SEEK_END);
     int length = ftell(file);
     rewind(file);
-    char dest[length + 1];
+    char* dest=(char*) malloc(sizeof(char)*(length+1));
     fread(dest, 1, length, file);
     dest[length] = '\0';
     freopen(filename, "w+", file);
+    char * second_part = malloc (sizeof(char) * (length-real_loc + 1));
+    // if deletion
     if((int)change.c == DELETE) {
       if(real_loc < length) {
         fwrite(dest, real_loc - 1, 1, file);
         fflush(file);
-        char second_part[length-real_loc + 1];
-        strcpy(second_part, &dest[real_loc]);
-        second_part[length-real_loc] = '\0';
-        fwrite(second_part, length-real_loc, 1, file);
-        fflush(file);
-        newline = 2;
-      }
-    } else if((int)change.c == NEWLINE) {
-        fwrite(dest, real_loc, 1, file);
-        fflush(file);
-        for(int i = 0; i < 238 - (real_loc % 238); i++) {
-          fputc(' ', file);
-          fflush(file);
+        if(dest[real_loc - 1] == '\n') {
+          newline = 1;
         }
-        char second_part[length-real_loc + 1];
         strcpy(second_part, &dest[real_loc]);
         second_part[length-real_loc] = '\0';
         fwrite(second_part, length-real_loc, 1, file);
         fflush(file);
-        newline = 1;
+      }
+      // if insertion
     } else {
       if(real_loc < length) {
         fwrite(dest, real_loc, 1, file);
         fflush(file);
         fputc(change.c, file);
         fflush(file);
-        char second_part[length-real_loc + 1];
         strcpy(second_part, &dest[real_loc]);
         second_part[length-real_loc] = '\0';
         fwrite(second_part, length-real_loc, 1, file);
@@ -142,7 +131,12 @@ void* thread_fn(void* p) {
         fputc(change.c, file);
         fflush(file);
       }
+       if((int)change.c == NEWLINE) {
+        newline = 1;
+      }
     }
+      free(dest);
+      free(second_part);
     // add this change to log history
     log_node_t* new = (log_node_t*)malloc(sizeof(log_node_t));
     new->ver = version;
@@ -162,6 +156,7 @@ void* thread_fn(void* p) {
       head = head->next;
       free(fr);
     }
+
     socket_node_t* cur = users->head;
     while (cur != NULL) {
       send_file(cur->socket, id, real_loc, newline, file);

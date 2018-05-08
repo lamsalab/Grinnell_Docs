@@ -22,6 +22,8 @@ int version;
 int prev_len;
 int len;
 int id;
+int real_index;
+char* buf;
 
 int total_characters;
 
@@ -32,54 +34,99 @@ void* get_new(void* p) {
   int s_for_ds = arg->socket;
   free(arg); // free thread arg struct
   int info[5];
-  int counter = 0;
+  int counter = 0;  
   // Read lines until we hit the end of the input (the client disconnects)
   while(read(s_for_ds, info, sizeof(int) * 5) > 0) {
     version = info[0];
     prev_len = len;
     len = info[1];
     getyx(stdscr, y, x);
-    char buf[info[1]];
-    total_characters = info[1] - 1;
+    buf=(char*) realloc(buf, sizeof(char)*info[1]);
+    total_characters = info[1] - 2;
     if(read(s_for_ds, buf, info[1]) > 0) {
       clear();
       addstr(buf);
       refresh();
-      if(info[4] == 1) {
-        if(info[2] != id && info[3] > y*x_win + x) {
+      // if a new line (insertion)
+      if(info[4] == 1 && len-prev_len == 1) {
+        real_index++;
+        if(info[2] != id && info[3] > real_index) {
           move(y, x);
+          real_index--;
         } else if (info[2] != id) {
-          move(y+1, x - info[3]%x_win);
+          move(y+1, real_index - info[3]);
           y++;
-          x -= info[3] % x_win;
+          x = real_index - info[3];
         } else {
           move(y+1, 0);
           y++;
           x = 0;
-        }         
+        }
+        // if the first version
       } else if (counter == 0) {
         move(0, 0);
         x = 0;
         y = 0;
-      } else if(info[4] == 2) {
-        if(x == 0 && y != 0) {
-        move(y-1, x_win -1);
-        y--;
-        x = x_win -1;
-        } else if(x == 0 && y == 0) {
+        // if a newline (deletion)
+      } else if(info[4] == 1 && len-prev_len == -1) {
+        real_index--;
+        // if after, we don't change
+        if(info[2] != id && info[3] > real_index){
           move(y, x);
+          real_index++;
+          // if before
         } else {
-          move(y, x-1);
-          x--;
-        }  
-      } else if(!(info[2] != id && info[3] > y*x_win + x)) {
-        if (x == x_win - 1) {
-          move(y + 1, 0);
-          y++;
-          x = 0;
+          int limit = real_index - 1;
+          if(limit == -1) {
+            move(0, 0);
+            y = 0;
+            x = 0;
+          } else {
+            while (limit>=0 && buf[limit] != '\n'){
+              limit--;
+            }
+             int dist;
+          if (limit == -1){
+            dist = real_index % x_win;
+          } else {
+            dist=(real_index-limit) %x_win;
+          }
+          move(y-1, dist);
+          y--;
+          x = dist;
+          }
+        }
+        // if insertion
+      } else if (len-prev_len == 1) {
+        real_index++;
+        if(info[2] != id && info[3] > real_index) {
+          move(y, x);
+          real_index--;
         } else {
-        move(y, x + (len - prev_len));
-        x+= len - prev_len;
+          if(x < x_win -1) {
+          move(y, x+1);
+          x++;
+          } else {
+            move(y+1, 0);
+            y++;
+            x = 0;
+          }
+        }
+        // if deletion
+      } else if (len-prev_len == -1) {
+        real_index--;
+        if(info[2] != id && info[3] > real_index) {
+          move(y, x);
+          real_index++;
+        } else {
+          if(x > 0) {
+            move(y, x-1);
+            x--;
+          } else {
+            move(y-1, x_win -1);
+            y--;
+            x = x_win -1;
+          }
         }
       } else {
         move(y, x);
@@ -105,6 +152,8 @@ int main(int argc, char** argv) {
 
   prev_len = 0;
   len = 0;
+  real_index = 0;
+  buf = NULL;
   // after connected, initialize screen and send message to join the system
   initscr();
   // one char at a time
@@ -158,49 +207,79 @@ int main(int argc, char** argv) {
     ch = getch();
     switch (ch) {
     case KEY_LEFT:
-      if(x > 0) {
+      if(real_index == 0) {
+        move(y, x);
+        real_index++;
+      } else if (real_index-1>= 0 && buf[real_index - 1] == '\n') {
+        if(real_index -2 < 0) {
+          move(0, 0);
+          y=0;
+          x=0;
+        } else if(real_index - 2 >= 0) {
+          int limit = real_index - 2;
+          while ( limit>=0 && buf[limit] != '\n'){
+            limit--;
+          }
+          int dist;
+          if (limit ==-1){
+            dist=(real_index-1)%x_win;
+          } else{
+            dist=(real_index-2-limit) %x_win;
+          }
+          move(y-1, dist);
+          y--;
+          x=dist;
+        }
+      } else if(x == 0) {
+          move(y-1, x_win-1);
+          y--;
+          x = x_win-1;
+        } else {
         move(y, x - 1);
         x--;
       }
-      break;
-    case KEY_UP:
-      if(y > 0) {
-        move(y-1, x);
-        y--;
-      }
+      real_index--;
       break;
     case KEY_DOWN:
-      if ((y+1)*x_win + x < total_characters){
-        move(y+1, x);
-        y++;
-      }
+    case KEY_UP:
+      move(y, x);
       break;
     case KEY_RIGHT:
-      if(x < x_win - 1) {
-        if (y*x_win + (x+1) < total_characters){
-          move(y, x+1);
-          x++;
-        }
+      if (real_index < total_characters){
+         if(x < x_win - 1) {
+          if (buf[real_index] == '\n') {
+            move(y+1, 0);
+            y++;
+            x = 0;
+          } else {
+            move(y, x+1);
+            x++;
+          }
+         } else {
+           move(y+1, 0);
+           y++;
+         }
+         real_index++;
       }
       break;
     case KEY_BACKSPACE:
     case KEY_DC:
     case 127:
       change_arg->c = (char)16;
-      change_arg->loc = y*x_win + x;
+      change_arg->loc = real_index;
       change_arg->version = version;
       write(s_for_ds, change_arg, sizeof(change_arg_t));
       break;
     case 10:
       change_arg->c = (char)10;
-      change_arg->loc = y*x_win + x;
+      change_arg->loc = real_index;
       change_arg->version = version;
       write(s_for_ds, change_arg, sizeof(change_arg_t));
        break;
       // if the input is not for moving a cursor, but for inserting a char
     default:
       change_arg->c = ch;
-      change_arg->loc = y*x_win + x;
+      change_arg->loc = real_index;
       change_arg->version = version;
       write(s_for_ds, change_arg, sizeof(change_arg_t));
       break;
