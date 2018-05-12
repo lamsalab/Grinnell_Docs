@@ -34,7 +34,7 @@ void* get_new(void* p) {
   int s_for_ds = arg->socket;
   free(arg); // free thread arg struct
   int info[5];
-  int counter = 0;  
+  int counter = 0;
   // Read lines until we hit the end of the input (the client disconnects)
   while(read(s_for_ds, info, sizeof(int) * 5) > 0) {
     version = info[0];
@@ -70,7 +70,7 @@ void* get_new(void* p) {
         // if a newline (deletion)
       } else if(info[4] == 1 && len-prev_len == -1) {
         real_index--;
-        // if after, we don't change
+        // If after current location, we don't change
         if(info[2] != id && info[3] > real_index){
           move(y, x);
           real_index++;
@@ -85,6 +85,7 @@ void* get_new(void* p) {
             while (limit>=0 && buf[limit] != '\n'){
               limit--;
             }
+            limit++;
              int dist;
           if (limit == -1){
             dist = real_index % x_win;
@@ -134,7 +135,7 @@ void* get_new(void* p) {
       refresh();
     }
     counter++;
-  } 
+  }
   return NULL;
 }
 
@@ -145,7 +146,7 @@ int main(int argc, char** argv) {
     fflush(stderr);
     exit(EXIT_FAILURE);
   }
-  
+
   // store the command line args
   char* passwd = argv[1];
   char* server_address = argv[2];
@@ -178,7 +179,7 @@ int main(int argc, char** argv) {
   // fill in address of directory server
   struct hostent* hp = gethostbyname(server_address);
   bcopy((char *)hp->h_addr, (char *)&addr_for_ds.sin_addr.s_addr, hp->h_length);
-  
+
   if(connect(s_for_ds, (struct sockaddr*)&addr_for_ds, sizeof(struct sockaddr_in))) {
     perror("I failed: connect failed");
     exit(2);
