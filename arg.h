@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 
 #define PASSWORD_LIMIT 20
-#define SERVER_PORT 1050
+#define SERVER_PORT 1057
 
 // this is the struct that a user will send to the server if there's a change to the document
 typedef struct change_arg {
@@ -35,6 +35,7 @@ typedef struct thread_arg {
 typedef struct log_node {
   int ver; // based on
   int loc; // loc when version is ver
+  int type; // 0 for insertion, 1 for deletion
   struct log_node* next;
 } log_node_t;
 

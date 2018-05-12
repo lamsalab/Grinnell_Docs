@@ -31,10 +31,32 @@ log_node_t* tail;
 char password[PASSWORD_LIMIT] = "IloveGrinnell"; // default password
 sockets_t* users; // the list of sockets
 pthread_mutex_t m; // for locking merging process
+pthread_mutex_t m2; // for locking the socket list
 FILE* file; // the shared doc
 char* filename; // the pathname of the shared doc
 int size;
 int num_users;
+
+void user_remove(int id) {
+  pthread_mutex_lock(&m2);
+  socket_node_t* cur = users->head;
+  socket_node_t* prev = NULL;
+  while(cur != NULL) {
+    if(cur->id == id) {
+      if(prev == NULL) {
+        users->head = cur->next;
+        free(cur);
+        break;
+      } else {
+        prev->next = cur->next;
+        free(cur);
+        break;
+      }
+    }
+    cur = cur->next;
+  }
+   pthread_mutex_unlock(&m2);
+}
 
 void send_file(int socket, int id, int real_loc, int newline, FILE* file) {
   rewind(file);
@@ -68,12 +90,14 @@ void* thread_fn(void* p) {
   int id = arg->id;
   free(arg); // free thread arg struct
   int newline = 0;
+  int type = 0;
   send_file(connection_socket, id, 0, newline, file);
   change_arg_t change;
  
   while(read(connection_socket, &change, sizeof(change_arg_t)) > 0) {
     pthread_mutex_lock(&m);
     newline = 0;
+    type = 0;
     printf("ver is %d, loc is %d\n", change.version, change.loc);
     int real_loc = change.loc;
     log_node_t* curr = head;
@@ -86,11 +110,18 @@ void* thread_fn(void* p) {
     }
     while(curr != NULL) {
       if(curr->loc <= real_loc) {
+        if(curr->type == 0) {
         real_loc++;
+        } else {
+          real_loc--;
+        }
       }
       curr = curr->next;
     }
     printf("real_loc is %d\n", real_loc);
+    if(real_loc < 0) {
+      real_loc = 0;
+    }
     rewind(file);
     fseek(file, 0, SEEK_END);
     int length = ftell(file);
@@ -102,6 +133,7 @@ void* thread_fn(void* p) {
     char * second_part = malloc (sizeof(char) * (length-real_loc + 1));
     // if deletion
     if((int)change.c == DELETE) {
+      type = 1;
       if(real_loc < length) {
         fwrite(dest, real_loc - 1, 1, file);
         fflush(file);
@@ -142,6 +174,7 @@ void* thread_fn(void* p) {
     new->ver = version;
     version++;
     new->loc = real_loc;
+    new->type = type;
     new->next = NULL;
     if(tail != NULL) {
       tail->next = new;
@@ -164,6 +197,7 @@ void* thread_fn(void* p) {
     }
     pthread_mutex_unlock(&m);
   }
+  user_remove(id);
   return NULL;
 }
 
@@ -192,6 +226,7 @@ int main(int argc, char** argv) {
   tail = NULL;
   // initialize lock
   pthread_mutex_init(&m, NULL);
+  pthread_mutex_init(&m2, NULL);
   // we are initially at Version 0
   version = 0;
   size = 0;

@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <curses.h>
+#include <stdbool.h>
 #include "arg.h"
 
 int x; // cursor's x position
@@ -27,6 +28,22 @@ char* buf;
 
 int total_characters;
 
+int getnl(int real_index) {
+  int limit = real_index - 1;
+  if(limit == -1) {
+    return -1;
+  } else {
+    while (limit >=0 && buf[limit] != '\n'){
+      limit--;
+    }
+    if (limit == -1) {
+      return -1;
+    } else {
+      return limit;
+    }
+  }
+}
+
 // for listening to the server for a newer version of the doc
 void* get_new(void* p) {
   // unpack thread arg
@@ -34,7 +51,7 @@ void* get_new(void* p) {
   int s_for_ds = arg->socket;
   free(arg); // free thread arg struct
   int info[5];
-  int counter = 0;
+  int counter = 0;  
   // Read lines until we hit the end of the input (the client disconnects)
   while(read(s_for_ds, info, sizeof(int) * 5) > 0) {
     version = info[0];
@@ -50,13 +67,14 @@ void* get_new(void* p) {
       // if a new line (insertion)
       if(info[4] == 1 && len-prev_len == 1) {
         real_index++;
-        if(info[2] != id && info[3] > real_index) {
+        if(info[2] != id && info[3] >= real_index) {
           move(y, x);
           real_index--;
         } else if (info[2] != id) {
-          move(y+1, real_index - info[3]);
+          int prev_nl = getnl(real_index);
+          move(y+1, (real_index - prev_nl - 1)% x_win);
           y++;
-          x = real_index - info[3];
+          x = (real_index - prev_nl - 1)% x_win;
         } else {
           move(y+1, 0);
           y++;
@@ -70,39 +88,39 @@ void* get_new(void* p) {
         // if a newline (deletion)
       } else if(info[4] == 1 && len-prev_len == -1) {
         real_index--;
-        // If after current location, we don't change
-        if(info[2] != id && info[3] > real_index){
+        // if after, we don't change
+        if(info[2] != id && info[3] > real_index + 1) {
           move(y, x);
           real_index++;
           // if before
         } else {
-          int limit = real_index - 1;
-          if(limit == -1) {
-            move(0, 0);
-            y = 0;
-            x = 0;
-          } else {
-            while (limit>=0 && buf[limit] != '\n'){
-              limit--;
-            }
-            limit++;
-             int dist;
-          if (limit == -1){
-            dist = real_index % x_win;
-          } else {
-            dist=(real_index-limit) %x_win;
-          }
-          move(y-1, dist);
+          int prev_nl = getnl(real_index);
+          move(y-1, (real_index - prev_nl - 1) % x_win);
           y--;
-          x = dist;
-          }
-        }
-        // if insertion
+          x = (real_index - prev_nl - 1) % x_win;
+        } 
+        // if insertion (normal char)
       } else if (len-prev_len == 1) {
+        int prev_nl;
         real_index++;
-        if(info[2] != id && info[3] > real_index) {
+        if(info[2] != id && info[3] >= real_index) {
           move(y, x);
           real_index--;
+          // if before
+        } else if (info[2] != id && (prev_nl = getnl(real_index)) >= 0) {
+          if(prev_nl < info[3]) {
+            if(x < x_win -1) {
+          move(y, x+1);
+          x++;
+          } else {
+            move(y+1, 0);
+            y++;
+            x = 0;
+          }
+          } else {
+            move(y, x);
+          }
+          // if this client inserted this char, move anyway
         } else {
           if(x < x_win -1) {
           move(y, x+1);
@@ -115,10 +133,25 @@ void* get_new(void* p) {
         }
         // if deletion
       } else if (len-prev_len == -1) {
+        int prev_nl;
         real_index--;
-        if(info[2] != id && info[3] > real_index) {
+        if(info[2] != id && info[3] > real_index + 1) {
           move(y, x);
           real_index++;
+        } else if(info[2] != id && (prev_nl = getnl(real_index)) >= 0) {
+          if(prev_nl + 1 < info[3]) {
+            if(x > 0) {
+            move(y, x-1);
+            x--;
+          } else {
+            move(y-1, x_win -1);
+            y--;
+            x = x_win -1;
+            }
+          } else {
+            move(y, x);
+          }
+          // if this client deleted, move anyway
         } else {
           if(x > 0) {
             move(y, x-1);
@@ -129,6 +162,7 @@ void* get_new(void* p) {
             x = x_win -1;
           }
         }
+        // default
       } else {
         move(y, x);
       }
@@ -146,7 +180,7 @@ int main(int argc, char** argv) {
     fflush(stderr);
     exit(EXIT_FAILURE);
   }
-
+  
   // store the command line args
   char* passwd = argv[1];
   char* server_address = argv[2];
@@ -179,7 +213,7 @@ int main(int argc, char** argv) {
   // fill in address of directory server
   struct hostent* hp = gethostbyname(server_address);
   bcopy((char *)hp->h_addr, (char *)&addr_for_ds.sin_addr.s_addr, hp->h_length);
-
+  
   if(connect(s_for_ds, (struct sockaddr*)&addr_for_ds, sizeof(struct sockaddr_in))) {
     perror("I failed: connect failed");
     exit(2);
@@ -199,7 +233,7 @@ int main(int argc, char** argv) {
     perror("pthread_create failed");
     exit(EXIT_FAILURE);
   }
-  refresh();
+  //refresh();
   int ch;
   change_arg_t* change_arg = (change_arg_t*)malloc(sizeof(change_arg_t));
   // move cursor according to user input
