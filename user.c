@@ -13,6 +13,8 @@
 #include <limits.h>
 #include <curses.h>
 #include <stdbool.h>
+#include <time.h>
+#include <sys/time.h>
 #include "arg.h"
 
 int x; // cursor's x position
@@ -25,8 +27,21 @@ int len;
 int id;
 int real_index;
 char* buf;
-
+FILE* time_log;
+size_t send_time;
 int total_characters;
+
+// Get the time in microseconds
+size_t time_us() {
+  struct timeval tv;
+  if(gettimeofday(&tv, NULL) == -1) {
+    perror("gettimeofday");
+    exit(2);
+  }
+
+  // Convert timeval values to microseconds
+  return tv.tv_sec*1000000 + tv.tv_usec;
+}
 
 int getnl(int real_index) {
   int limit = real_index - 1;
@@ -60,10 +75,18 @@ void* get_new(void* p) {
     getyx(stdscr, y, x);
     buf=(char*) realloc(buf, sizeof(char)*info[1]);
     total_characters = info[1] - 2;
+    
     if(read(s_for_ds, buf, info[1]) > 0) {
       clear();
       addstr(buf);
       refresh();
+      
+      if (id == info[2] && counter != 0){
+        size_t receive_time = time_us();
+        fprintf(time_log, "Time difference: %lu\n",receive_time - send_time);
+        fflush(time_log);
+      }
+      
       // if a new line (insertion)
       if(info[4] == 1 && len-prev_len == 1) {
         real_index++;
@@ -173,6 +196,14 @@ void* get_new(void* p) {
   return NULL;
 }
 
+void server_write(int ch, int location, int version, int socket, change_arg_t * change_arg, FILE* time_log){
+  change_arg->c = (char) ch;
+      change_arg->loc = location;
+      change_arg->version = version;
+      write(socket, change_arg, sizeof(change_arg_t));
+      send_time = time_us();
+}
+
 int main(int argc, char** argv) {
   // if not correct number of command line args
   if(argc != 3) {
@@ -185,6 +216,8 @@ int main(int argc, char** argv) {
   char* passwd = argv[1];
   char* server_address = argv[2];
 
+  time_log = fopen("output.txt", "w+");
+  
   prev_len = 0;
   len = 0;
   real_index = 0;
@@ -300,25 +333,18 @@ int main(int argc, char** argv) {
     case KEY_BACKSPACE:
     case KEY_DC:
     case 127:
-      change_arg->c = (char)16;
-      change_arg->loc = real_index;
-      change_arg->version = version;
-      write(s_for_ds, change_arg, sizeof(change_arg_t));
+      server_write(16, real_index, version, s_for_ds, change_arg, time_log);
       break;
     case 10:
-      change_arg->c = (char)10;
-      change_arg->loc = real_index;
-      change_arg->version = version;
-      write(s_for_ds, change_arg, sizeof(change_arg_t));
+      server_write(10, real_index, version, s_for_ds, change_arg, time_log);
        break;
       // if the input is not for moving a cursor, but for inserting a char
     default:
-      change_arg->c = ch;
-      change_arg->loc = real_index;
-      change_arg->version = version;
-      write(s_for_ds, change_arg, sizeof(change_arg_t));
+      server_write(ch, real_index, version, s_for_ds, change_arg, time_log);
       break;
     }
   }
   endwin();
 }
+
+
