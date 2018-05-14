@@ -58,7 +58,7 @@ void send_file(int socket, int id, int real_loc, int newline, FILE* file) {
   int length = ftell(file); // find the length
   rewind(file); // go back to the beginning of the file
 
-  char* buf = (char*)malloc(sizeof(char)*(length + 1)); // buffer for the whole file, including the null terminator
+  char buf[length + 1]; // buffer for the whole file, including the null terminator
 
   // read from the file
   if(fread(buf, length, 1, file) > 0) {
@@ -72,7 +72,6 @@ void send_file(int socket, int id, int real_loc, int newline, FILE* file) {
     write(socket, info, sizeof(int) * 5); // send the file info
     write(socket, buf, length + 1); // send the file
   }
-  free(buf); // free the buffer
   rewind(file); // go back to the beginning of the file
 }
 
@@ -133,7 +132,7 @@ void* thread_fn(void* p) {
     int length = ftell(file);
     rewind(file);
 
-    char* dest = (char*)malloc(sizeof(char) * (length + 1)); // buffer for the whole file
+    char dest[length + 1]; // buffer for the whole file
     fread(dest, 1, length, file); // read the file into dest
     dest[length] = '\0'; // terminate the buffer
     if(freopen(filename, "w+", file) == NULL) { // reopen the file for rewriting
@@ -141,7 +140,7 @@ void* thread_fn(void* p) {
       fflush(stderr);
       exit(2);
     }
-    char* second_part = (char*)malloc(sizeof(char) * (length - real_loc + 1)); // buffer for the part of the file after the change
+    char second_part[length - real_loc + 1]; // buffer for the part of the file after the change
     
     // if this change is a deletion
     if((int)change.c == DELETE) {
@@ -187,9 +186,6 @@ void* thread_fn(void* p) {
         newline = 1;
       }
     }
-    // free the buffers
-    free(dest);
-    free(second_part);
     // add this change to log history
     log_node_t* new = (log_node_t*)malloc(sizeof(log_node_t));
     new->ver = version; // the version before merging the change
