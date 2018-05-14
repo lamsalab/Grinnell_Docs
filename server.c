@@ -11,171 +11,193 @@
 #include <curses.h>
 #include "arg.h"
 
-#define DELETE 16
-#define NEWLINE 10
-
-typedef struct socket_node {
-  int socket;
-  int id;
-  struct socket_node* next;
-} socket_node_t;
-
-// a list of sockets, one for each user
-typedef struct sockets {
-  socket_node_t* head;
-} sockets_t;
-
-int version;
-log_node_t* head;
-log_node_t* tail;
-char password[PASSWORD_LIMIT] = "IloveGrinnell"; // default password
-sockets_t* users; // the list of sockets
+int version; // the version of the file in the server
+log_node_t* head; // the head of the list of historical changes
+log_node_t* tail; // the tail of the list of historical changes
+char password[PASSWORD_LIMIT] = "IloveGrinnell"; // default password for checking if an incoming client should be allowed
+sockets_t* users; // the list of users
 pthread_mutex_t m; // for locking merging process
-pthread_mutex_t m2; // for locking the socket list
+pthread_mutex_t m2; // for locking the user list
 FILE* file; // the shared doc
 char* filename; // the pathname of the shared doc
-int size;
-int num_users;
+int size; // size of the list of changes
+int num_users; // total number of users, including the users who have quitted the system
 
+// this function removes a user from the user list
 void user_remove(int id) {
   pthread_mutex_lock(&m2);
   socket_node_t* cur = users->head;
   socket_node_t* prev = NULL;
+  // traverse the user list
   while(cur != NULL) {
+    // find this user
     if(cur->id == id) {
+      // if this user is the head of the user list
       if(prev == NULL) {
         users->head = cur->next;
         free(cur);
         break;
+        // if not
       } else {
         prev->next = cur->next;
         free(cur);
         break;
       }
     }
+    // update the pointers, prepare for checking the next node
     cur = cur->next;
+    prev = cur;
   }
-   pthread_mutex_unlock(&m2);
+  pthread_mutex_unlock(&m2);
 }
 
+// this function sends the updated file to a client
 void send_file(int socket, int id, int real_loc, int newline, FILE* file) {
-  rewind(file);
-  fseek(file, 0, SEEK_END);
-  int length = ftell(file);
-  rewind(file);
-  char* buf=(char*) malloc(sizeof(char)*(length+1));
+  // get the length of this updated file
+  fseek(file, 0, SEEK_END); // go to the end of the file
+  int length = ftell(file); // find the length
+  rewind(file); // go back to the beginning of the file
+
+  char* buf = (char*)malloc(sizeof(char)*(length + 1)); // buffer for the whole file, including the null terminator
+
+  // read from the file
   if(fread(buf, length, 1, file) > 0) {
-    buf[length] = '\0';
-    int* ver_len = (int*)malloc(sizeof(int) * 5);
-    ver_len[0] = version;
-    ver_len[1] = length + 1;
-    ver_len[2] = id;
-    ver_len[3] = real_loc;
-    ver_len[4] = newline;
-    write(socket, ver_len, sizeof(int)*5);
-    free(ver_len);
-    write(socket, buf, length + 1);
+    buf[length] = '\0'; // terminate this buffer
+    int info[5]; // buffer for this version's info
+    info[0] = version; // the version of this file
+    info[1] = length + 1; // the size of the buffer
+    info[2] = id; // the id of the user who made this change
+    info[3] = real_loc; // the location of this change
+    info[4] = newline; // if this change is a newline: 1 if it is, 0 otherwise
+    write(socket, info, sizeof(int) * 5); // send the file info
+    write(socket, buf, length + 1); // send the file
   }
-  free(buf);
-  rewind(file);
+  free(buf); // free the buffer
+  rewind(file); // go back to the beginning of the file
 }
 
-// zero for not a new line
-// is it possible to send a blank file?
-// listen for updates to the document
+// listen for an update to the document from a user
 void* thread_fn(void* p) {
   // unpack thread arg
   thread_arg_t* arg = (thread_arg_t*)p;
-  int connection_socket = arg->socket;
-  int id = arg->id;
+  int connection_socket = arg->socket; // the socket through which we can talk to this user
+  int id = arg->id; // this user's id
   free(arg); // free thread arg struct
-  int newline = 0;
-  int type = 0;
-  send_file(connection_socket, id, 0, newline, file);
-  change_arg_t change;
- 
+  int newline = 0; // if a change is newline
+  int type = 0; // type of change: 0 for insertion, 1 for deletion
+  send_file(connection_socket, id, 0, newline, file); // send the file to the user for the first time
+  change_arg_t change; // buffer for getting the user's change
+
+  // keep listening for updates
   while(read(connection_socket, &change, sizeof(change_arg_t)) > 0) {
     pthread_mutex_lock(&m);
-    newline = 0;
-    type = 0;
+    newline = 0; // reset the newline indicator
+    type = 0; // reset the type indicator
     printf("ver is %d, loc is %d\n", change.version, change.loc);
-    int real_loc = change.loc;
-    log_node_t* curr = head;
+    int real_loc = change.loc; // real location of the change: the location of change in the version of the server
+    log_node_t* curr = head; // for traversing the list of historical changes
+
+    // find the first change in the history that we want to compare to, in order to find the real location of this change
     while(curr != NULL) {
+      // we want to find the change in the history that has the same base version as this change
       if(curr->ver < change.version) {
         curr = curr->next;
       } else {
         break;
       }
     }
+
+    // we traverse the list and compare the location of this change to the location of a historical change, in order to find real location
     while(curr != NULL) {
+      // if the historical change's location is before or at the same location as this change
       if(curr->loc <= real_loc) {
+        // if the historical change is an insertion, we increase this change's location
         if(curr->type == 0) {
-        real_loc++;
+          real_loc++;
+          // if the historical change is a deletion, we decrease this change's location
         } else {
           real_loc--;
         }
       }
       curr = curr->next;
     }
+
     printf("real_loc is %d\n", real_loc);
+
     if(real_loc < 0) {
       real_loc = 0;
     }
-    rewind(file);
-    fseek(file, 0, SEEK_END);
+
+    // find the length of the file, as described in send_file()
+    fseek(file, 0, SEEK_END); 
     int length = ftell(file);
     rewind(file);
-    char* dest=(char*) malloc(sizeof(char)*(length+1));
-    fread(dest, 1, length, file);
-    dest[length] = '\0';
-    freopen(filename, "w+", file);
-    char * second_part = malloc (sizeof(char) * (length-real_loc + 1));
-    // if deletion
+
+    char* dest = (char*)malloc(sizeof(char) * (length + 1)); // buffer for the whole file
+    fread(dest, 1, length, file); // read the file into dest
+    dest[length] = '\0'; // terminate the buffer
+    if(freopen(filename, "w+", file) == NULL) { // reopen the file for rewriting
+      fprintf(stderr, "Unable to reopen %s\n", filename);
+      fflush(stderr);
+      exit(2);
+    }
+    char* second_part = (char*)malloc(sizeof(char) * (length - real_loc + 1)); // buffer for the part of the file after the change
+    
+    // if this change is a deletion
     if((int)change.c == DELETE) {
-      type = 1;
+      type = 1; // set the type indicator to 1
+      // just to make sure we are not beyond the file
       if(real_loc < length) {
+        // write the part of the file before the deletion
         fwrite(dest, real_loc - 1, 1, file);
         fflush(file);
+        // if this change is to delete a newline, we set the newline indicator to 1
         if(dest[real_loc - 1] == '\n') {
           newline = 1;
         }
+        // we copy the part of the file after deletion into second_part
         strcpy(second_part, &dest[real_loc]);
+        // terminate the buffer
         second_part[length-real_loc] = '\0';
+        // write this part to file
         fwrite(second_part, length-real_loc, 1, file);
         fflush(file);
       }
-      // if insertion
+      
+      // if this change is an insertion
     } else {
+      // just make sure we are not making a change beyond the file
       if(real_loc < length) {
+        // write the part of the file before the change
         fwrite(dest, real_loc, 1, file);
         fflush(file);
+        // add the change
         fputc(change.c, file);
         fflush(file);
+        // copy the rest of the file into second_part
         strcpy(second_part, &dest[real_loc]);
+        // terminate the buffer
         second_part[length-real_loc] = '\0';
+        // write this part to file
         fwrite(second_part, length-real_loc, 1, file);
         fflush(file);
-      } else {
-        fwrite(dest, length, 1, file);
-        fflush(file);
-        fseek(file, real_loc, SEEK_SET);
-        fputc(change.c, file);
-        fflush(file);
       }
-       if((int)change.c == NEWLINE) {
+      // if this change is a newline, we set the newline indicator to 1
+      if((int)change.c == NEWLINE) {
         newline = 1;
       }
     }
-      free(dest);
-      free(second_part);
+    // free the buffers
+    free(dest);
+    free(second_part);
     // add this change to log history
     log_node_t* new = (log_node_t*)malloc(sizeof(log_node_t));
-    new->ver = version;
-    version++;
-    new->loc = real_loc;
-    new->type = type;
+    new->ver = version; // the version before merging the change
+    version++; // update version
+    new->loc = real_loc; // the location of the change in the version before the change
+    new->type = type; // is this change an insertion or a deletion
     new->next = NULL;
+    // add this node to the end of the list of changes
     if(tail != NULL) {
       tail->next = new;
       tail = new;
@@ -183,13 +205,15 @@ void* thread_fn(void* p) {
       head = new;
       tail = new;
     }
+    // increase the size of the list of changes
     size++;
+    // when there are over 100 nodes in the list of changes, we free the head node
     if(size > 100) {
-      log_node_t* fr = head;
+      log_node_t* front = head;
       head = head->next;
-      free(fr);
+      free(front);
     }
-
+    // traverse the user list and send each user the updated file
     socket_node_t* cur = users->head;
     while (cur != NULL) {
       send_file(cur->socket, id, real_loc, newline, file);
@@ -197,40 +221,44 @@ void* thread_fn(void* p) {
     }
     pthread_mutex_unlock(&m);
   }
+  // if read fails, it must be the case that the user quits, so we remove this user from the user list
   user_remove(id);
   return NULL;
 }
 
 int main(int argc, char** argv) {
-  
+  // check the number of command line arguments
   if(argc != 2) {
     fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
     fflush(stderr);
-    exit(EXIT_FAILURE);
+    exit(2);
   }
 
-  // open specified file
+  // open specified file for reading
   file = fopen(argv[1], "r");
   if(file == NULL) {
     fprintf(stderr, "Unable to open file: %s\n", argv[1]);
     fflush(stderr);
-    exit(EXIT_FAILURE);
+    exit(2);
   }
+  // save this file's path in a global so that we are able to reopen it
   filename = argv[1];
 
-  // initialize a list of users
+  // initialize the list of users
   users = (sockets_t*)malloc(sizeof(sockets_t));
   users->head = NULL;
+  
   // initialize log history
   head = NULL;
   tail = NULL;
-  // initialize lock
+  
+  // initialize locks
   pthread_mutex_init(&m, NULL);
   pthread_mutex_init(&m2, NULL);
-  // we are initially at Version 0
-  version = 0;
-  size = 0;
-  num_users = 0;
+  version = 0; // we are initially at Version 0
+  size = 0; // no historical changes at first
+  num_users = 0; // no users at first
+  
   // set up a socket for accepting new clients
   int s = socket(AF_INET, SOCK_STREAM, 0);
   if(s == -1) {
@@ -257,7 +285,7 @@ int main(int argc, char** argv) {
     exit(2);
   }
 
-  // accepting new clients and handling their requests
+  // keep looking for new users
   while(true) {
     // Accept a client connection
     struct sockaddr_in client_addr;
@@ -267,39 +295,35 @@ int main(int argc, char** argv) {
       perror("accept failed");
       exit(2);
     }
-    // buffer for args from our accepted client
-    user_arg_t arg;
+    // buffer for the password entered by our accepted client
+    char passwd[PASSWORD_LIMIT];
     // read message from accepted client
-    int bytes_read = read(client_socket, &arg, sizeof(user_arg_t));
-    if(bytes_read < 0) {
-      perror("read failed");
-      exit(2);
-    }
+    read(client_socket, passwd, sizeof(passwd));
+    
     // check if the password match
-    if(strcmp(arg.buffer, password) == 0) {
-      // add the socket to the list of sockets
-      num_users++;
+    if(strcmp(passwd, password) == 0) {
+      // add this user to the list of users
+      num_users++; // increase the number of users
       socket_node_t* new = (socket_node_t*)malloc(sizeof(socket_node_t));
       new->socket = client_socket;
-      new->next = users->head;
+      new->next = users->head; // add to the beginning of the user list
       new->id = num_users;
       users->head = new;
-      int* id_copy = (int*)malloc(sizeof(int));
-      *id_copy = new->id;
-      write(client_socket, id_copy, sizeof(int));
-      free(id_copy);
-      // launch a thread for listening to this user
+      // tell the user his/her id
+      write(client_socket, &(new->id), sizeof(int));
+      // launch a thread for listening to this user for updates to the file
+      // first set the thread function argument
       thread_arg_t* arg = (thread_arg_t*)malloc(sizeof(thread_arg_t));
       arg->socket = client_socket;
       arg->id = new->id;
+      // launch the thread
       pthread_t thread;
       if(pthread_create(&thread, NULL, thread_fn, arg)) {
         perror("pthread_create failed");
-        exit(EXIT_FAILURE);
+        exit(2);
       }
-      // if the password does not match
+      // if the password does not match, disconnect to this user
     } else {
-      write(client_socket, "Not Allowed\n", 12);
       close(client_socket);
     }
   }
