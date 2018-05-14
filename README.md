@@ -16,9 +16,19 @@ Below is a set of intructions to run GrinnellDoc.
  server test.txt <br />
  <br />
  Machine 2:<br />
- user ILoveGrinnell 132.127.168.212<br />
+ user IloveGrinnell 132.127.168.212<br />
   <br />
  Machine 3:<br />
- user ILoveGrinnell 132.127.168.212<br />
+ user IloveGrinnell 132.127.168.212<br />
+ 
+ 
+ Notes:
+ 
+  1) Please do not change the size of your terminal while running our program. You should maximize your terminal size.
+  2) If nothing is printed or there are two copies of the text printed, don't panic. Move your cursor to the right and make any change. It will fix it.
+  3) Please run the program on one account. After changing our buffers to stack memory buffers, it did not work out.
+  4) Please create file first on the server side before run "server filename.txt
+  
+ Examples: our program behaves like Google Doc and normal text editors.
   
  Enjoy!
