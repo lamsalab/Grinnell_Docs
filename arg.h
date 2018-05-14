@@ -19,7 +19,6 @@ typedef struct change_arg {
   char c; // the change
   int loc; // the location of the change
   int version; // the version the user is in when the user makes the change
-  int id; // this user's id
 } change_arg_t;
 
 // this struct represents thread function argument

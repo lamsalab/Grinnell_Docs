@@ -58,10 +58,15 @@ void send_file(int socket, int id, int real_loc, int newline, FILE* file) {
   int length = ftell(file); // find the length
   rewind(file); // go back to the beginning of the file
 
-  char buf[length + 1]; // buffer for the whole file, including the null terminator
+  char* buf = (char*)malloc(sizeof(char)*(length + 1)); // buffer for the whole file, including the null terminator
 
   // read from the file
   if(fread(buf, length, 1, file) > 0) {
+    // check for error
+    if(ferror(file)) {
+      perror("fread");
+      exit(2);
+    }
     buf[length] = '\0'; // terminate this buffer
     int info[5]; // buffer for this version's info
     info[0] = version; // the version of this file
@@ -72,6 +77,7 @@ void send_file(int socket, int id, int real_loc, int newline, FILE* file) {
     write(socket, info, sizeof(int) * 5); // send the file info
     write(socket, buf, length + 1); // send the file
   }
+  free(buf); // free the buffer
   rewind(file); // go back to the beginning of the file
 }
 
@@ -132,15 +138,20 @@ void* thread_fn(void* p) {
     int length = ftell(file);
     rewind(file);
 
-    char dest[length + 1]; // buffer for the whole file
+    char* dest = (char*)malloc(sizeof(char) * (length + 1)); // buffer for the whole file
     fread(dest, 1, length, file); // read the file into dest
+    // check for error
+    if(ferror(file)) {
+      perror("fread");
+      exit(2);
+    }
     dest[length] = '\0'; // terminate the buffer
     if(freopen(filename, "w+", file) == NULL) { // reopen the file for rewriting
       fprintf(stderr, "Unable to reopen %s\n", filename);
       fflush(stderr);
       exit(2);
     }
-    char second_part[length - real_loc + 1]; // buffer for the part of the file after the change
+    char* second_part = (char*)malloc(sizeof(char) * (length - real_loc + 1)); // buffer for the part of the file after the change
     
     // if this change is a deletion
     if((int)change.c == DELETE) {
@@ -149,6 +160,11 @@ void* thread_fn(void* p) {
       if(real_loc < length) {
         // write the part of the file before the deletion
         fwrite(dest, real_loc - 1, 1, file);
+        // check for error
+        if(ferror(file)) {
+          perror("fwrite");
+          exit(2);
+        }
         fflush(file);
         // if this change is to delete a newline, we set the newline indicator to 1
         if(dest[real_loc - 1] == '\n') {
@@ -160,6 +176,11 @@ void* thread_fn(void* p) {
         second_part[length-real_loc] = '\0';
         // write this part to file
         fwrite(second_part, length-real_loc, 1, file);
+        // check for error
+        if(ferror(file)) {
+          perror("fwrite");
+          exit(2);
+        }
         fflush(file);
       }
       
@@ -169,6 +190,11 @@ void* thread_fn(void* p) {
       if(real_loc < length) {
         // write the part of the file before the change
         fwrite(dest, real_loc, 1, file);
+        // check for error
+        if(ferror(file)) {
+          perror("fwrite");
+          exit(2);
+        }
         fflush(file);
         // add the change
         fputc(change.c, file);
@@ -179,6 +205,11 @@ void* thread_fn(void* p) {
         second_part[length-real_loc] = '\0';
         // write this part to file
         fwrite(second_part, length-real_loc, 1, file);
+        // check for error
+        if(ferror(file)) {
+          perror("fwrite");
+          exit(2);
+        }
         fflush(file);
       }
       // if this change is a newline, we set the newline indicator to 1
@@ -186,6 +217,9 @@ void* thread_fn(void* p) {
         newline = 1;
       }
     }
+    // free the buffers
+    free(dest);
+    free(second_part);
     // add this change to log history
     log_node_t* new = (log_node_t*)malloc(sizeof(log_node_t));
     new->ver = version; // the version before merging the change
