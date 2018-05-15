@@ -85,7 +85,6 @@ void* get_new(void* p) {
     prev_len = len; // update the length of the previous version and length of current version
     len = info[1];
     getyx(stdscr, y, x); // save current position of the cursor
-    //char new_buf[info[1]]; // update the buffer for the file
     buf = (char*)realloc(buf, sizeof(char) * info[1]); // update the buffer for the file
     total_characters = info[1] - 2; // update the cursor limiter; notice that we minus 2 instead of 1 because there's usually a newline character appended to the text file
     
