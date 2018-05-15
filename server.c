@@ -323,9 +323,6 @@ int main(int argc, char** argv) {
       fflush(stderr);
       exit(2);
     }
-
-      // launch a thread for listening to this user for updates to the file
-      // f;
     
     // check if the password match
     if(strcmp(passwd, password) == 0) {
