@@ -80,18 +80,13 @@ void* get_new(void* p) {
   
   // keep listening for newer version of the file
   // we first read this version's info
-  
-  //int ret;
-  //ret = read(s_for_ds, info, sizeof(int) * 5);
-  //printf("ret value: %d\n", ret);
-
   while(read(s_for_ds, info, sizeof(int) * 5) > 0) {
     version = info[0]; // update this user's version
     prev_len = len; // update the length of the previous version and length of current version
     len = info[1];
     getyx(stdscr, y, x); // save current position of the cursor
-    
-    buf = (char*)realloc(buf, sizeof(char) * info[1]);
+    //char new_buf[info[1]]; // update the buffer for the file
+    buf = (char*)realloc(buf, sizeof(char) * info[1]); // update the buffer for the file
     total_characters = info[1] - 2; // update the cursor limiter; notice that we minus 2 instead of 1 because there's usually a newline character appended to the text file
     
     // read the newer version from the server
@@ -249,7 +244,7 @@ void* get_new(void* p) {
     }
   }
   // if we reach here, that means the server is down
-  fprintf(stderr, "Server is down: End of thread\n");
+  fprintf(stderr, "Server is down\n");
   fflush(stderr);
   exit(2);
   return NULL;
@@ -262,7 +257,7 @@ void server_write(int ch, int location, int version, int socket, FILE* time_log)
   change_arg.loc = location;
   change_arg.version = version;
   if(write(socket, &change_arg, sizeof(change_arg_t)) == -1) {
-    fprintf(stderr, "Server is down: Server write\n");
+    fprintf(stderr, "Server is down\n");
     fflush(stderr);
     exit(2);
   }
@@ -322,14 +317,14 @@ int main(int argc, char** argv) {
   // after connected, send the password
   char message[PASSWORD_LIMIT];
   strcpy(message, passwd);
-  if(write(s_for_ds, message, sizeof(message)) <= 0) {
-    fprintf(stderr, "Server is down: Password write\n");
+  if(write(s_for_ds, message, sizeof(message)) == -1) {
+    fprintf(stderr, "Server is down\n");
     fflush(stderr);
     exit(2);
   }
 
   // read from the central server for this user's id
-  if(read(s_for_ds, &id, sizeof(int)) <= 0) {
+  if(read(s_for_ds, &id, sizeof(int)) == -1) {
     fprintf(stderr, "Server is down\n");
     fflush(stderr);
     exit(2);

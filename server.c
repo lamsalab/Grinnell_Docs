@@ -62,11 +62,6 @@ void send_file(int socket, int id, int real_loc, int newline, FILE* file) {
 
   // read from the file
   if(fread(buf, length, 1, file) > 0) {
-    // check for error
-    if(ferror(file)) {
-      perror("fread");
-      exit(2);
-    }
     buf[length] = '\0'; // terminate this buffer
     int info[5]; // buffer for this version's info
     info[0] = version; // the version of this file
@@ -139,11 +134,6 @@ void* thread_fn(void* p) {
 
     char dest[length + 1]; // buffer for the whole file
     fread(dest, 1, length, file); // read the file into dest
-    // check for error
-    if(ferror(file)) {
-      perror("fread");
-      exit(2);
-    }
     dest[length] = '\0'; // terminate the buffer
     if(freopen(filename, "w+", file) == NULL) { // reopen the file for rewriting
       fprintf(stderr, "Unable to reopen %s\n", filename);
@@ -159,11 +149,6 @@ void* thread_fn(void* p) {
       if(real_loc < length) {
         // write the part of the file before the deletion
         fwrite(dest, real_loc - 1, 1, file);
-        // check for error
-        if(ferror(file)) {
-          perror("fwrite");
-          exit(2);
-        }
         fflush(file);
         // if this change is to delete a newline, we set the newline indicator to 1
         if(dest[real_loc - 1] == '\n') {
@@ -175,11 +160,6 @@ void* thread_fn(void* p) {
         second_part[length-real_loc] = '\0';
         // write this part to file
         fwrite(second_part, length-real_loc, 1, file);
-        // check for error
-        if(ferror(file)) {
-          perror("fwrite");
-          exit(2);
-        }
         fflush(file);
       }
       
@@ -314,11 +294,7 @@ int main(int argc, char** argv) {
     // buffer for the password entered by our accepted client
     char passwd[PASSWORD_LIMIT];
     // read message from accepted client
-    if (read(client_socket, passwd, sizeof(passwd) < 0)){
-      fprintf(stderr, "Server is down: Password read\n");
-      fflush(stderr);
-      exit(2);
-    }
+    read(client_socket, passwd, sizeof(passwd));
     
     // check if the password match
     if(strcmp(passwd, password) == 0) {
@@ -330,11 +306,7 @@ int main(int argc, char** argv) {
       new->id = num_users;
       users->head = new;
       // tell the user his/her id
-      if (write(client_socket, &(new->id), sizeof(int)) < 0){
-        fprintf(stderr, "Server is down: Client write\n");
-        fflush(stderr);
-        exit(2);
-      }
+      write(client_socket, &(new->id), sizeof(int));
       // launch a thread for listening to this user for updates to the file
       // first set the thread function argument
       thread_arg_t* arg = (thread_arg_t*)malloc(sizeof(thread_arg_t));
