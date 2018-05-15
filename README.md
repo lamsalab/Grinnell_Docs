@@ -24,10 +24,11 @@ Below is a set of intructions to run GrinnellDoc.
  
  Notes:
  
-  1) Please do not change the size of your terminal while running our program. You should maximize your terminal size.
+  1) Please do not change the size of your terminal window while running our program. You should maximize your terminal size.
   2) If nothing is printed or there are two copies of the text printed, don't panic. Move your cursor to the right and make any change. It will fix it.
-  3) Please run the program on one account. After changing our buffers to stack memory buffers, it did not work out.
+  3) Please don't write too many characters in a file. We use stack memory (which has an upper limit) for buffers, if the file is too long it will produce seg fault.
   4) Please create file first on the server side before run "server filename.txt". Notice that our program also assumes that there is a newline character at the end of the file, since emacs and some other text editors add a newline character automatically to a text file.
+  5) If you want to quit your user program, press on TAB.
   
  Examples: our program behaves like Google Doc and normal text editors.
   
