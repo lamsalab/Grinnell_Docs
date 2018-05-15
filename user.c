@@ -80,20 +80,27 @@ void* get_new(void* p) {
   
   // keep listening for newer version of the file
   // we first read this version's info
+  
+  //int ret;
+  //ret = read(s_for_ds, info, sizeof(int) * 5);
+  //printf("ret value: %d\n", ret);
+
   while(read(s_for_ds, info, sizeof(int) * 5) > 0) {
     version = info[0]; // update this user's version
     prev_len = len; // update the length of the previous version and length of current version
     len = info[1];
     getyx(stdscr, y, x); // save current position of the cursor
-    buf = (char*)realloc(buf, sizeof(char) * info[1]); // update the buffer for the file
+    
+    buf = (char*)realloc(buf, sizeof(char) * info[1]);
     total_characters = info[1] - 2; // update the cursor limiter; notice that we minus 2 instead of 1 because there's usually a newline character appended to the text file
     
     // read the newer version from the server
     if(read(s_for_ds, buf, info[1]) > 0) {
+    
       clear(); // clear the terminal
       addstr(buf); // print the newer version on the terminal
       refresh();
-      
+
       // record time if the change updated in this newer version was made by this user and it is not the initial sending
       if(id == info[2] && counter != 0){
         size_t receive_time = time_us();
@@ -242,19 +249,20 @@ void* get_new(void* p) {
     }
   }
   // if we reach here, that means the server is down
-  fprintf(stderr, "Server is down\n");
+  fprintf(stderr, "Server is down: End of thread\n");
   fflush(stderr);
   exit(2);
   return NULL;
 }
 
 // this function writes the change made by this user to the server
-void server_write(int ch, int location, int version, int socket, change_arg_t* change_arg, FILE* time_log) {
-  change_arg->c = (char) ch;
-  change_arg->loc = location;
-  change_arg->version = version;
-  if(write(socket, change_arg, sizeof(change_arg_t)) == -1) {
-    fprintf(stderr, "Server is down\n");
+void server_write(int ch, int location, int version, int socket, FILE* time_log) {
+  change_arg_t change_arg;
+  change_arg.c = (char) ch;
+  change_arg.loc = location;
+  change_arg.version = version;
+  if(write(socket, &change_arg, sizeof(change_arg_t)) == -1) {
+    fprintf(stderr, "Server is down: Server write\n");
     fflush(stderr);
     exit(2);
   }
@@ -314,14 +322,14 @@ int main(int argc, char** argv) {
   // after connected, send the password
   char message[PASSWORD_LIMIT];
   strcpy(message, passwd);
-  if(write(s_for_ds, message, sizeof(message)) == -1) {
-    fprintf(stderr, "Server is down\n");
+  if(write(s_for_ds, message, sizeof(message)) <= 0) {
+    fprintf(stderr, "Server is down: Password write\n");
     fflush(stderr);
     exit(2);
   }
 
   // read from the central server for this user's id
-  if(read(s_for_ds, &id, sizeof(int)) == -1) {
+  if(read(s_for_ds, &id, sizeof(int)) <= 0) {
     fprintf(stderr, "Server is down\n");
     fflush(stderr);
     exit(2);
@@ -351,7 +359,7 @@ int main(int argc, char** argv) {
   }
 
   int ch; // buffer for input from the user
-  change_arg_t* change_arg = (change_arg_t*)malloc(sizeof(change_arg_t));
+
   // keep reading from user input
   while(true) {
     refresh();
@@ -424,24 +432,24 @@ int main(int argc, char** argv) {
       // if the user is quitting
     case '\t':
       close(s_for_ds);
+      fclose(time_log);
       endwin();
       exit(0);
       // if the user is deleting a char
     case KEY_BACKSPACE:
     case KEY_DC:
     case 127:
-      server_write(DELETE, real_index, version, s_for_ds, change_arg, time_log);
+      server_write(DELETE, real_index, version, s_for_ds, time_log);
       break;
       // if the user is inserting a newline
     case NEWLINE:
-      server_write(NEWLINE, real_index, version, s_for_ds, change_arg, time_log);
+      server_write(NEWLINE, real_index, version, s_for_ds, time_log);
       break;
       // Default Case: if the user is inserting a normal char
     default:
-      server_write(ch, real_index, version, s_for_ds, change_arg, time_log);
+      server_write(ch, real_index, version, s_for_ds, time_log);
       break;
     }
   }
 }
-
 

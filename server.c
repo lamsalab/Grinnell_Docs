@@ -58,7 +58,7 @@ void send_file(int socket, int id, int real_loc, int newline, FILE* file) {
   int length = ftell(file); // find the length
   rewind(file); // go back to the beginning of the file
 
-  char* buf = (char*)malloc(sizeof(char)*(length + 1)); // buffer for the whole file, including the null terminator
+  char buf[length + 1]; // buffer for the whole file, including the null terminator
 
   // read from the file
   if(fread(buf, length, 1, file) > 0) {
@@ -77,7 +77,6 @@ void send_file(int socket, int id, int real_loc, int newline, FILE* file) {
     write(socket, info, sizeof(int) * 5); // send the file info
     write(socket, buf, length + 1); // send the file
   }
-  free(buf); // free the buffer
   rewind(file); // go back to the beginning of the file
 }
 
@@ -138,7 +137,7 @@ void* thread_fn(void* p) {
     int length = ftell(file);
     rewind(file);
 
-    char* dest = (char*)malloc(sizeof(char) * (length + 1)); // buffer for the whole file
+    char dest[length + 1]; // buffer for the whole file
     fread(dest, 1, length, file); // read the file into dest
     // check for error
     if(ferror(file)) {
@@ -151,7 +150,7 @@ void* thread_fn(void* p) {
       fflush(stderr);
       exit(2);
     }
-    char* second_part = (char*)malloc(sizeof(char) * (length - real_loc + 1)); // buffer for the part of the file after the change
+    char second_part[length - real_loc + 1]; // buffer for the part of the file after the change
     
     // if this change is a deletion
     if((int)change.c == DELETE) {
@@ -190,11 +189,6 @@ void* thread_fn(void* p) {
       if(real_loc < length) {
         // write the part of the file before the change
         fwrite(dest, real_loc, 1, file);
-        // check for error
-        if(ferror(file)) {
-          perror("fwrite");
-          exit(2);
-        }
         fflush(file);
         // add the change
         fputc(change.c, file);
@@ -205,11 +199,6 @@ void* thread_fn(void* p) {
         second_part[length-real_loc] = '\0';
         // write this part to file
         fwrite(second_part, length-real_loc, 1, file);
-        // check for error
-        if(ferror(file)) {
-          perror("fwrite");
-          exit(2);
-        }
         fflush(file);
       }
       // if this change is a newline, we set the newline indicator to 1
@@ -217,9 +206,6 @@ void* thread_fn(void* p) {
         newline = 1;
       }
     }
-    // free the buffers
-    free(dest);
-    free(second_part);
     // add this change to log history
     log_node_t* new = (log_node_t*)malloc(sizeof(log_node_t));
     new->ver = version; // the version before merging the change
@@ -328,7 +314,11 @@ int main(int argc, char** argv) {
     // buffer for the password entered by our accepted client
     char passwd[PASSWORD_LIMIT];
     // read message from accepted client
-    read(client_socket, passwd, sizeof(passwd));
+    if (read(client_socket, passwd, sizeof(passwd) < 0)){
+      fprintf(stderr, "Server is down: Password read\n");
+      fflush(stderr);
+      exit(2);
+    }
     
     // check if the password match
     if(strcmp(passwd, password) == 0) {
@@ -340,7 +330,11 @@ int main(int argc, char** argv) {
       new->id = num_users;
       users->head = new;
       // tell the user his/her id
-      write(client_socket, &(new->id), sizeof(int));
+      if (write(client_socket, &(new->id), sizeof(int)) < 0){
+        fprintf(stderr, "Server is down: Client write\n");
+        fflush(stderr);
+        exit(2);
+      }
       // launch a thread for listening to this user for updates to the file
       // first set the thread function argument
       thread_arg_t* arg = (thread_arg_t*)malloc(sizeof(thread_arg_t));
