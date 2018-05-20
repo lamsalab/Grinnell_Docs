@@ -33,3 +33,5 @@ Below is a set of intructions to run GrinnellDoc.
  Examples: our program behaves like Google Doc and normal text editors.
   
  Enjoy!
+ 
+ Note: Made in collaboration with Joshua, Anaan, and Hongyan. Due to the nature of the project, the commit comments describe the individual contributions.
